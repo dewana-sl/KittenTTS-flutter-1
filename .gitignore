@@ -4,6 +4,8 @@
 .packages
 build/
 android/.cxx/
+node_modules/
 pubspec.lock
+!benchmark/app/pubspec.lock
 
 .DS_Store

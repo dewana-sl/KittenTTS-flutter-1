@@ -1,0 +1,678 @@
+name: Flutter CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+env:
+  DEFAULT_TESTMU_SAMPLE_TEXT: |-
+    KittenTTS runs fully on your device and creates clear speech quickly.
+    This benchmark compares every model for speed, quality, and consistency.
+  TESTMU_SDK_FOLDER: Flutter SDK
+
+jobs:
+  benchmark-approval:
+    name: Maintainer approval for benchmarks
+    runs-on: ubuntu-latest
+    environment:
+      name: testmu-benchmarks
+
+    steps:
+      - run: echo "Benchmark run approved."
+
+  sdk:
+    name: Flutter SDK checks
+    runs-on: ubuntu-latest
+    needs: benchmark-approval
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Disable Flutter analytics
+        run: flutter --disable-analytics
+
+      - name: Install SDK dependencies
+        run: flutter pub get
+
+      - name: Analyze SDK
+        run: flutter analyze
+
+      - name: Test SDK
+        run: flutter test
+
+      - name: Install benchmark app dependencies
+        run: flutter pub get
+        working-directory: benchmark/app
+
+      - name: Analyze benchmark app
+        run: flutter analyze
+        working-directory: benchmark/app
+
+      - name: Test benchmark app
+        run: flutter test
+        working-directory: benchmark/app
+
+  android-package:
+    name: Benchmark app Android APK
+    runs-on: ubuntu-latest
+    needs: sdk
+    outputs:
+      app_url: ${{ steps.upload-android-app.outputs.app_url }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Build release APK
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter build apk --release
+          test -f build/app/outputs/flutter-apk/app-release.apk
+        working-directory: benchmark/app
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-flutter-apk
+          path: benchmark/app/build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Prune old TestMu Android uploads
+        env:
+          LT_USERNAME: ${{ secrets.LT_USERNAME }}
+          LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$LT_USERNAME" ] || [ -z "$LT_ACCESS_KEY" ]; then
+            echo "LT_USERNAME or LT_ACCESS_KEY is missing."
+            exit 1
+          fi
+
+          response="$(curl -sS -u "$LT_USERNAME:$LT_ACCESS_KEY" \
+            --location --request GET "https://manual-api.lambdatest.com/app/data?type=android&level=user")"
+          app_ids="$(APP_DATA="$response" node - <<'NODE'
+          const response = JSON.parse(process.env.APP_DATA || "{}");
+          const apps = Array.isArray(response.data) ? response.data : [];
+          const ids = apps
+            .filter((app) => String(app.name || "").startsWith("KittenTTS_Flutter_Android_"))
+            .map((app) => app.app_id || app.appId || app.id)
+            .filter(Boolean);
+          process.stdout.write(ids.join(","));
+          NODE
+          )"
+
+          if [ -n "$app_ids" ]; then
+            curl -sS -u "$LT_USERNAME:$LT_ACCESS_KEY" \
+              --location --request DELETE "https://manual-api.lambdatest.com/app/delete" \
+              --header "Content-Type: application/json" \
+              --data-raw "{\"appIds\":\"$app_ids\"}"
+            echo
+          else
+            echo "No old TestMu Flutter Android uploads to prune."
+          fi
+
+      - id: upload-android-app
+        name: Upload APK to TestMu
+        env:
+          LT_USERNAME: ${{ secrets.LT_USERNAME }}
+          LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          response="$(curl -sS -u "$LT_USERNAME:$LT_ACCESS_KEY" \
+            --location --request POST "https://manual-api.lambdatest.com/app/upload/realDevice" \
+            --form "name=KittenTTS_Flutter_Android_${GITHUB_RUN_ID}" \
+            --form "appFile=@benchmark/app/build/app/outputs/flutter-apk/app-release.apk")"
+          app_url="$(UPLOAD_RESPONSE="$response" node - <<'NODE'
+          const response = JSON.parse(process.env.UPLOAD_RESPONSE || "{}");
+          const appUrl = response.app_url || response.appUrl || response.app || response.url;
+          if (!appUrl || !String(appUrl).startsWith("lt://")) {
+            throw new Error(`Unable to find lt:// app URL in response: ${JSON.stringify(response)}`);
+          }
+          process.stdout.write(appUrl);
+          NODE
+          )"
+          echo "app_url=$app_url" >> "$GITHUB_OUTPUT"
+
+  ios-package:
+    name: Benchmark app iOS unsigned IPA
+    runs-on: macos-latest
+    needs: sdk
+    outputs:
+      app_url: ${{ steps.upload-ios-app.outputs.app_url }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install CocoaPods if missing
+        run: |
+          if ! command -v pod >/dev/null 2>&1; then
+            sudo gem install cocoapods --no-document
+          fi
+          pod --version
+
+      - name: Build unsigned iOS app and package IPA
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter build ios --release --no-codesign
+
+          app_path="build/ios/iphoneos/Runner.app"
+          ipa_path="$GITHUB_WORKSPACE/artifacts/ios/KittenTTS-Flutter-unsigned.ipa"
+          package_dir="$RUNNER_TEMP/flutter-ios-ipa"
+          if [ ! -d "$app_path" ]; then
+            echo "Unsigned .app was not created at $app_path"
+            exit 1
+          fi
+
+          rm -rf "$package_dir"
+          mkdir -p "$package_dir/Payload" "$(dirname "$ipa_path")"
+          cp -R "$app_path" "$package_dir/Payload/"
+          (cd "$package_dir" && zip -qry "$ipa_path" Payload)
+          unzip -l "$ipa_path" | sed -n '1,40p'
+        working-directory: benchmark/app
+
+      - name: Upload unsigned IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-flutter-unsigned-ipa
+          path: artifacts/ios/KittenTTS-Flutter-unsigned.ipa
+
+      - name: Prune old TestMu unsigned iOS uploads
+        env:
+          LT_USERNAME: ${{ secrets.LT_USERNAME }}
+          LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          response="$(curl -sS -u "$LT_USERNAME:$LT_ACCESS_KEY" \
+            --location --request GET "https://manual-api.lambdatest.com/app/data?type=ios&level=user")"
+          app_ids="$(APP_DATA="$response" node - <<'NODE'
+          const response = JSON.parse(process.env.APP_DATA || "{}");
+          const apps = Array.isArray(response.data) ? response.data : [];
+          const ids = apps
+            .filter((app) => String(app.name || "").startsWith("KittenTTS_Flutter_iOS_UNSIGNED_"))
+            .map((app) => app.app_id || app.appId || app.id)
+            .filter(Boolean);
+          process.stdout.write(ids.join(","));
+          NODE
+          )"
+
+          if [ -n "$app_ids" ]; then
+            curl -sS -u "$LT_USERNAME:$LT_ACCESS_KEY" \
+              --location --request DELETE "https://manual-api.lambdatest.com/app/delete" \
+              --header "Content-Type: application/json" \
+              --data-raw "{\"appIds\":\"$app_ids\"}"
+            echo
+          else
+            echo "No old TestMu Flutter iOS uploads to prune."
+          fi
+
+      - id: upload-ios-app
+        name: Upload unsigned IPA to TestMu
+        env:
+          LT_USERNAME: ${{ secrets.LT_USERNAME }}
+          LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          response="$(curl -sS -u "$LT_USERNAME:$LT_ACCESS_KEY" \
+            --location --request POST "https://manual-api.lambdatest.com/app/upload/realDevice" \
+            --form "name=KittenTTS_Flutter_iOS_UNSIGNED_${GITHUB_RUN_ID}" \
+            --form "appFile=@artifacts/ios/KittenTTS-Flutter-unsigned.ipa")"
+          app_url="$(UPLOAD_RESPONSE="$response" node - <<'NODE'
+          const response = JSON.parse(process.env.UPLOAD_RESPONSE || "{}");
+          const appUrl = response.app_url || response.appUrl || response.app || response.url;
+          if (!appUrl || !String(appUrl).startsWith("lt://")) {
+            throw new Error(`Unable to find lt:// app URL in response: ${JSON.stringify(response)}`);
+          }
+          process.stdout.write(appUrl);
+          NODE
+          )"
+          echo "app_url=$app_url" >> "$GITHUB_OUTPUT"
+
+  web-package:
+    name: Benchmark app web build
+    runs-on: ubuntu-latest
+    needs: sdk
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Build web benchmark app
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter build web --release
+          test -f build/web/index.html
+        working-directory: benchmark/app
+
+      - name: Upload web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-flutter-web
+          path: benchmark/app/build/web
+
+  testmu-ios-benchmark:
+    name: TestMu iOS benchmark (${{ matrix.device }})
+    runs-on: ubuntu-latest
+    needs: ios-package
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - slug: iphone-14
+            device: iPhone 14
+            version: "16"
+          - slug: ipad-10-9-2022
+            device: iPad 10.9 (2022)
+            version: "18"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Appium harness
+        run: npm ci
+        working-directory: e2e/appium
+
+      - name: Run TestMu iOS benchmark
+        env:
+          LT_USERNAME: ${{ secrets.LT_USERNAME }}
+          LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY }}
+          TESTMU_IOS_APP_URL: ${{ needs.ios-package.outputs.app_url }}
+          TESTMU_IOS_DEVICE: ${{ matrix.device }}
+          TESTMU_IOS_VERSION: ${{ matrix.version }}
+          TESTMU_DEVICE: ${{ matrix.device }}
+          TESTMU_PLATFORM_NAME: iOS
+          TESTMU_PLATFORM_VERSION: ${{ matrix.version }}
+          TESTMU_SAMPLE_TEXT: ${{ vars.TESTMU_SAMPLE_TEXT || env.DEFAULT_TESTMU_SAMPLE_TEXT }}
+          TESTMU_REQUIRE_WER_AUDIO: "true"
+        run: |
+          set -o pipefail
+          mkdir -p reports
+          export BENCHMARK_STARTED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
+          set +e
+          npm run test:ios 2>&1 | tee reports/appium-output.log
+          status=${PIPESTATUS[0]}
+          set -e
+          export BENCHMARK_FINISHED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
+          if [ "$status" -ne 0 ] && [ -z "$(find reports -name '*.json' -print -quit)" ]; then
+            node scripts/write-failure-report.js
+          fi
+          exit "$status"
+        working-directory: e2e/appium
+
+      - name: Upload iOS benchmark result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-result-ios-${{ matrix.slug }}
+          path: e2e/appium/reports
+
+  testmu-android-benchmark:
+    name: TestMu Android benchmark (${{ matrix.device }})
+    runs-on: ubuntu-latest
+    needs: android-package
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - slug: pixel-5
+            device: Pixel 5
+            version: "12"
+          - slug: galaxy-note10
+            device: Galaxy Note10
+            version: "12"
+          - slug: pixel-8
+            device: Pixel 8
+            version: "14"
+          - slug: redmi-note-8
+            device: Xiaomi Redmi Note 8
+            version: "10"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Appium harness
+        run: npm ci
+        working-directory: e2e/appium
+
+      - name: Run TestMu Android benchmark
+        env:
+          LT_USERNAME: ${{ secrets.LT_USERNAME }}
+          LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY }}
+          TESTMU_APP_URL: ${{ needs.android-package.outputs.app_url }}
+          TESTMU_ANDROID_DEVICE: ${{ matrix.device }}
+          TESTMU_ANDROID_VERSION: ${{ matrix.version }}
+          TESTMU_DEVICE: ${{ matrix.device }}
+          TESTMU_PLATFORM_NAME: Android
+          TESTMU_PLATFORM_VERSION: ${{ matrix.version }}
+          TESTMU_SAMPLE_TEXT: ${{ vars.TESTMU_SAMPLE_TEXT || env.DEFAULT_TESTMU_SAMPLE_TEXT }}
+          TESTMU_REQUIRE_WER_AUDIO: "true"
+          TESTMU_BENCHMARK_REPORT_TIMEOUT_MS: 2400000
+        run: |
+          set -o pipefail
+          mkdir -p reports
+          export BENCHMARK_STARTED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
+          set +e
+          npm run test:android 2>&1 | tee reports/appium-output.log
+          status=${PIPESTATUS[0]}
+          set -e
+          export BENCHMARK_FINISHED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
+          if [ "$status" -ne 0 ] && [ -z "$(find reports -name '*.json' -print -quit)" ]; then
+            node scripts/write-failure-report.js
+          fi
+          exit "$status"
+        working-directory: e2e/appium
+
+      - name: Upload Android benchmark result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-result-android-${{ matrix.slug }}
+          path: e2e/appium/reports
+
+  testmu-web-benchmark:
+    name: TestMu web benchmark (${{ matrix.device }} / ${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    needs: web-package
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - slug: pixel-8-chrome
+            device: Pixel 8
+            platform: Android
+            version: "14"
+            browser: Chrome
+          - slug: ipad-10-9-safari
+            device: iPad 10.9 (2022)
+            platform: iOS
+            version: "18"
+            browser: Safari
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Download web build
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-flutter-web
+          path: benchmark/app/build/web
+
+      - name: Install Appium harness
+        run: npm ci
+        working-directory: e2e/appium
+
+      - name: Start web server
+        run: |
+          nohup python3 -m http.server 4173 --bind 127.0.0.1 > "$RUNNER_TEMP/flutter-web-server.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/flutter-web-server.pid"
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:4173 >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/flutter-web-server.log"
+          exit 1
+        working-directory: benchmark/app/build/web
+
+      - name: Start LambdaTest tunnel
+        uses: LambdaTest/LambdaTest-tunnel-action@v2
+        with:
+          user: ${{ secrets.LT_USERNAME }}
+          accessKey: ${{ secrets.LT_ACCESS_KEY }}
+          tunnelName: kittentts-flutter-web-${{ github.run_id }}-${{ matrix.slug }}
+
+      - name: Run TestMu mobile browser benchmark
+        env:
+          LT_USERNAME: ${{ secrets.LT_USERNAME }}
+          LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY }}
+          TESTMU_WEB_URL: http://127.0.0.1:4173/?benchmarkAutoStart=true
+          TESTMU_TUNNEL_NAME: kittentts-flutter-web-${{ github.run_id }}-${{ matrix.slug }}
+          TESTMU_DEVICE: ${{ matrix.device }}
+          TESTMU_PLATFORM_NAME: ${{ matrix.platform }}
+          TESTMU_PLATFORM_VERSION: ${{ matrix.version }}
+          TESTMU_BROWSER_NAME: ${{ matrix.browser }}
+          TESTMU_SAMPLE_TEXT: ${{ vars.TESTMU_SAMPLE_TEXT || env.DEFAULT_TESTMU_SAMPLE_TEXT }}
+          TESTMU_REQUIRE_WER_AUDIO: "true"
+        run: |
+          set -o pipefail
+          mkdir -p reports
+          export BENCHMARK_STARTED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
+          set +e
+          npm run test:web:browser 2>&1 | tee reports/appium-output.log
+          status=${PIPESTATUS[0]}
+          set -e
+          export BENCHMARK_FINISHED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
+          if [ "$status" -ne 0 ] && [ -z "$(find reports -name '*.json' -print -quit)" ]; then
+            TESTMU_TARGET=web node scripts/write-failure-report.js
+          fi
+          exit "$status"
+        working-directory: e2e/appium
+
+      - name: Upload web benchmark result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-result-web-${{ matrix.slug }}
+          path: e2e/appium/reports
+
+  testmu-desktop-web-benchmark:
+    name: TestMu desktop web benchmark (Linux / Chrome)
+    runs-on: ubuntu-latest
+    needs: web-package
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Download web build
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-flutter-web
+          path: benchmark/app/build/web
+
+      - name: Install Appium harness
+        run: npm ci
+        working-directory: e2e/appium
+
+      - name: Start web server
+        run: |
+          nohup python3 -m http.server 4173 --bind 127.0.0.1 > "$RUNNER_TEMP/flutter-web-server.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/flutter-web-server.pid"
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:4173 >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/flutter-web-server.log"
+          exit 1
+        working-directory: benchmark/app/build/web
+
+      - name: Start LambdaTest tunnel
+        uses: LambdaTest/LambdaTest-tunnel-action@v2
+        with:
+          user: ${{ secrets.LT_USERNAME }}
+          accessKey: ${{ secrets.LT_ACCESS_KEY }}
+          tunnelName: kittentts-flutter-web-${{ github.run_id }}-linux-chrome
+
+      - name: Run TestMu desktop browser benchmark
+        env:
+          LT_USERNAME: ${{ secrets.LT_USERNAME }}
+          LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY }}
+          TESTMU_WEB_URL: http://127.0.0.1:4173/?benchmarkAutoStart=true
+          TESTMU_TUNNEL_NAME: kittentts-flutter-web-${{ github.run_id }}-linux-chrome
+          TESTMU_DEVICE: Linux Desktop
+          TESTMU_PLATFORM_NAME: Linux
+          TESTMU_BROWSER_NAME: Chrome
+          TESTMU_BROWSER_VERSION: latest
+          TESTMU_SAMPLE_TEXT: ${{ vars.TESTMU_SAMPLE_TEXT || env.DEFAULT_TESTMU_SAMPLE_TEXT }}
+          TESTMU_REQUIRE_WER_AUDIO: "true"
+        run: |
+          set -o pipefail
+          mkdir -p reports
+          export BENCHMARK_STARTED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
+          set +e
+          npm run test:web:desktop 2>&1 | tee reports/appium-output.log
+          status=${PIPESTATUS[0]}
+          set -e
+          export BENCHMARK_FINISHED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
+          if [ "$status" -ne 0 ] && [ -z "$(find reports -name '*.json' -print -quit)" ]; then
+            TESTMU_TARGET=web node scripts/write-failure-report.js
+          fi
+          exit "$status"
+        working-directory: e2e/appium
+
+      - name: Upload desktop web benchmark result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-result-web-linux-chrome
+          path: e2e/appium/reports
+
+  benchmark-report:
+    name: Benchmark report
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - testmu-ios-benchmark
+      - testmu-android-benchmark
+      - testmu-web-benchmark
+      - testmu-desktop-web-benchmark
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download benchmark result artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: benchmark-result-*
+          path: benchmark-results
+          merge-multiple: true
+
+      - name: Install report dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install google-api-python-client google-auth nvidia-riva-client
+
+      - name: Upload WAV audio to Google Drive
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_DRIVE_ROOT_FOLDER_ID: ${{ vars.GOOGLE_DRIVE_ROOT_FOLDER_ID }}
+          GOOGLE_DRIVE_PUBLIC_AUDIO: ${{ vars.GOOGLE_DRIVE_PUBLIC_AUDIO }}
+          TESTMU_SDK_FOLDER: Flutter SDK
+          GITHUB_EVENT_NUMBER: ${{ github.event.pull_request.number }}
+        run: python e2e/appium/scripts/upload-audio-to-google-drive.py benchmark-results
+
+      - name: Annotate WER with Parakeet
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+        run: python e2e/appium/scripts/annotate-wer-with-parakeet.py benchmark-results --strip-audio
+
+      - name: Build benchmark report
+        env:
+          GITHUB_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node e2e/appium/scripts/build-benchmark-report.js benchmark-results benchmark-report
+
+      - name: Upload benchmark report
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-report
+          path: benchmark-report
+
+      - name: Add report to job summary
+        run: cat benchmark-report/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment benchmark report on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('node:fs');
+            const sha = context.payload.pull_request.head.sha;
+            const marker = `<!-- kittentts-flutter-testmu-benchmark-report:${sha} -->`;
+            const report = fs.readFileSync('benchmark-report/pr-comment.md', 'utf8');
+            const body = `${marker}\n${report}`;
+            const {owner, repo} = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const comments = await github.rest.issues.listComments({
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+            const previous = comments.data.find((comment) =>
+              comment.user.type === 'Bot' && comment.body.includes(marker),
+            );
+
+            if (previous) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: previous.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+            }
+
+      - name: Fail on benchmark failures
+        run: node e2e/appium/scripts/check-benchmark-success.js benchmark-report/summary.json

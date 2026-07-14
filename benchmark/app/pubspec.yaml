@@ -1,0 +1,22 @@
+name: kittentts_flutter_benchmark_app
+description: KittenTTS Flutter benchmark app for TestMu CI.
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  kittentts_flutter:
+    path: ../..
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
