@@ -341,7 +341,9 @@ jobs:
   testmu-android-benchmark:
     name: TestMu Android benchmark (${{ matrix.device }})
     runs-on: ubuntu-latest
-    needs: android-package
+    needs:
+      - android-package
+      - testmu-ios-benchmark
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -409,7 +411,9 @@ jobs:
   testmu-web-benchmark:
     name: TestMu web benchmark (${{ matrix.device }} / ${{ matrix.browser }})
     runs-on: ubuntu-latest
-    needs: web-package
+    needs:
+      - web-package
+      - testmu-android-benchmark
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -486,7 +490,7 @@ jobs:
           set -e
           export BENCHMARK_FINISHED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
           if [ "$status" -ne 0 ] && [ -z "$(find reports -name '*.json' -print -quit)" ]; then
-            TESTMU_TARGET=web node scripts/write-failure-report.js
+            BENCHMARK_FAILED_STAGE="Run TestMu mobile browser benchmark" TESTMU_TARGET=web node scripts/write-failure-report.js
           fi
           exit "$status"
         working-directory: e2e/appium
@@ -501,7 +505,9 @@ jobs:
   testmu-desktop-web-benchmark:
     name: TestMu desktop web benchmark (Linux / Chrome)
     runs-on: ubuntu-latest
-    needs: web-package
+    needs:
+      - web-package
+      - testmu-web-benchmark
 
     steps:
       - uses: actions/checkout@v4
@@ -563,7 +569,7 @@ jobs:
           set -e
           export BENCHMARK_FINISHED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
           if [ "$status" -ne 0 ] && [ -z "$(find reports -name '*.json' -print -quit)" ]; then
-            TESTMU_TARGET=web node scripts/write-failure-report.js
+            BENCHMARK_FAILED_STAGE="Run TestMu desktop browser benchmark" TESTMU_TARGET=web node scripts/write-failure-report.js
           fi
           exit "$status"
         working-directory: e2e/appium
