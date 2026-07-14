@@ -47,15 +47,15 @@ jobs:
       - name: Install SDK dependencies
         run: flutter pub get
 
+      - name: Install benchmark app dependencies
+        run: flutter pub get
+        working-directory: benchmark/app
+
       - name: Analyze SDK
         run: flutter analyze
 
       - name: Test SDK
         run: flutter test
-
-      - name: Install benchmark app dependencies
-        run: flutter pub get
-        working-directory: benchmark/app
 
       - name: Analyze benchmark app
         run: flutter analyze
