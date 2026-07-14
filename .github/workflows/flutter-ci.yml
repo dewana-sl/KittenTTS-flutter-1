@@ -445,7 +445,7 @@ jobs:
 
       - name: Start web server
         run: |
-          nohup python3 -m http.server 4173 --bind 127.0.0.1 > "$RUNNER_TEMP/flutter-web-server.log" 2>&1 &
+          nohup python3 -m http.server 4173 --bind 0.0.0.0 > "$RUNNER_TEMP/flutter-web-server.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/flutter-web-server.pid"
           for i in {1..30}; do
             if curl -fsS http://127.0.0.1:4173 >/dev/null; then
@@ -468,7 +468,7 @@ jobs:
         env:
           LT_USERNAME: ${{ secrets.LT_USERNAME }}
           LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY }}
-          TESTMU_WEB_URL: http://127.0.0.1:4173/?benchmarkAutoStart=true
+          TESTMU_WEB_URL: http://localhost:4173/?benchmarkAutoStart=true
           TESTMU_TUNNEL_NAME: kittentts-flutter-web-${{ github.run_id }}-${{ matrix.slug }}
           TESTMU_DEVICE: ${{ matrix.device }}
           TESTMU_PLATFORM_NAME: ${{ matrix.platform }}
@@ -522,7 +522,7 @@ jobs:
 
       - name: Start web server
         run: |
-          nohup python3 -m http.server 4173 --bind 127.0.0.1 > "$RUNNER_TEMP/flutter-web-server.log" 2>&1 &
+          nohup python3 -m http.server 4173 --bind 0.0.0.0 > "$RUNNER_TEMP/flutter-web-server.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/flutter-web-server.pid"
           for i in {1..30}; do
             if curl -fsS http://127.0.0.1:4173 >/dev/null; then
@@ -545,7 +545,7 @@ jobs:
         env:
           LT_USERNAME: ${{ secrets.LT_USERNAME }}
           LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY }}
-          TESTMU_WEB_URL: http://127.0.0.1:4173/?benchmarkAutoStart=true
+          TESTMU_WEB_URL: http://localhost:4173/?benchmarkAutoStart=true
           TESTMU_TUNNEL_NAME: kittentts-flutter-web-${{ github.run_id }}-linux-chrome
           TESTMU_DEVICE: Linux Desktop
           TESTMU_PLATFORM_NAME: Linux
