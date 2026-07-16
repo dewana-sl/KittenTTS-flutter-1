@@ -121,6 +121,19 @@ function usableElementText(candidate, accessibilityId) {
   return text.length > 0 && text !== accessibilityId ? text : "";
 }
 
+function shouldOverrideSampleText(currentText, sampleText) {
+  if (!sampleText) {
+    return false;
+  }
+
+  const normalizedCurrentText = String(currentText || "").trim();
+  if (!normalizedCurrentText || normalizedCurrentText === "tts-input") {
+    return false;
+  }
+
+  return normalizedCurrentText !== sampleText;
+}
+
 async function readElementText(accessibilityId) {
   const element = await $(`~${accessibilityId}`);
 
@@ -575,8 +588,8 @@ describe("KittenTTS Flutter benchmark", () => {
 
     const sampleText = process.env.TESTMU_SAMPLE_TEXT;
     if (sampleText) {
-      const currentText = await input.getText().catch(() => "");
-      if (currentText !== sampleText) {
+      const currentText = await readElementText("tts-input").catch(() => "");
+      if (shouldOverrideSampleText(currentText, sampleText)) {
         try {
           await input.click();
           await input.clearValue();
@@ -586,6 +599,10 @@ describe("KittenTTS Flutter benchmark", () => {
             `[KittenTTS benchmark] Could not override sample text; continuing with the app default. ${error.message}`
           );
         }
+      } else {
+        console.log(
+          `[KittenTTS benchmark] Using app sample text; Appium reported "${currentText || "<empty>"}".`
+        );
       }
     }
 

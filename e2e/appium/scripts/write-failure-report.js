@@ -26,6 +26,14 @@ function findErrorSummary(logText) {
     /Error:/i,
     /Timeout/i,
   ];
+  const noisyPatterns = [
+    /Spec Files:/i,
+    /^\s*FAILED\s+in/i,
+    /^\s*at\s+/i,
+    /node:internal/i,
+    /listOnTimeout/i,
+    /processTimers/i,
+  ];
 
   const line = lines
     .slice()
@@ -33,7 +41,7 @@ function findErrorSummary(logText) {
     .find(
       (candidate) =>
         usefulPatterns.some((pattern) => pattern.test(candidate)) &&
-        !/Spec Files:|^\s*FAILED\s+in/i.test(candidate)
+        !noisyPatterns.some((pattern) => pattern.test(candidate))
     );
 
   return line
