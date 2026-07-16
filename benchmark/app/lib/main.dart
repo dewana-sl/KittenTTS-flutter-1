@@ -164,8 +164,9 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
               item.generationMs < currentBest.generationMs ? item : currentBest,
         );
         final warmMs = warm.map((item) => item.generationMs).toList();
-        final warmSeconds =
-            warm.map((item) => _round(item.generationMs / 1000)).toList();
+        final warmSeconds = warm
+            .map((item) => _round(item.generationMs / 1000))
+            .toList();
         final warmRtf = warm
             .map((item) => _round((item.generationMs / 1000) / item.duration))
             .toList();
@@ -191,9 +192,13 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
             'warmGenerationMs': warmMs,
             'warmGenerationSeconds': warmSeconds,
             'warmP50GenerationMs': _percentile(warmMs, 0.50).round(),
-            'warmP50GenerationSeconds': _round(_percentile(warmMs, 0.50) / 1000),
+            'warmP50GenerationSeconds': _round(
+              _percentile(warmMs, 0.50) / 1000,
+            ),
             'warmP95GenerationMs': _percentile(warmMs, 0.95).round(),
-            'warmP95GenerationSeconds': _round(_percentile(warmMs, 0.95) / 1000),
+            'warmP95GenerationSeconds': _round(
+              _percentile(warmMs, 0.95) / 1000,
+            ),
             'durationSeconds': _round(best.duration),
             'rtf': _round((best.generationMs / 1000) / best.duration),
             'warmRtf': warmRtf,
@@ -219,7 +224,11 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
             'status': 'failed',
             'failedStage': _status,
             'errorSummary': _friendlyError(error),
-            'errorDetails': stackTrace.toString().split('\n').take(8).join('\n'),
+            'errorDetails': stackTrace
+                .toString()
+                .split('\n')
+                .take(8)
+                .join('\n'),
           });
       } finally {
         await tts?.dispose();
@@ -239,7 +248,9 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
 
     setState(() {
       _running = false;
-      _status = failed ? 'Benchmark finished with model failures' : 'Benchmark finished';
+      _status = failed
+          ? 'Benchmark finished with model failures'
+          : 'Benchmark finished';
       _report = finalReport;
       _reportJson = const JsonEncoder.withIndent('  ').convert(finalReport);
       _audioChunks = chunks;
@@ -339,6 +350,18 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
+            Semantics(
+              label: 'benchmark-json-display',
+              value: _reportJson.isEmpty ? '{}' : _reportJson,
+              child: const SizedBox(height: 1, width: 1),
+            ),
+            ..._audioChunks.map(
+              (chunk) => Semantics(
+                label: chunk.accessibilityId,
+                value: chunk.value,
+                child: const SizedBox(height: 1, width: 1),
+              ),
+            ),
             const Text(
               'KittenTTS Flutter Benchmark',
               style: TextStyle(
@@ -432,16 +455,9 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
                 child: const SizedBox(height: 1, width: 1),
               ),
             ],
-            ..._audioChunks.map(
-              (chunk) => Semantics(
-                label: chunk.accessibilityId,
-                value: chunk.value,
-                child: const SizedBox(height: 1, width: 1),
-              ),
-            ),
             const SizedBox(height: 18),
             Semantics(
-              label: 'benchmark-json-display',
+              label: 'benchmark-json-visible',
               value: _reportJson,
               child: DecoratedBox(
                 decoration: BoxDecoration(
@@ -502,7 +518,10 @@ class _ResultSummary extends StatelessWidget {
                 ),
               ),
             if (rows.isEmpty)
-              const Text('No benchmark rows yet.', style: TextStyle(color: _muted)),
+              const Text(
+                'No benchmark rows yet.',
+                style: TextStyle(color: _muted),
+              ),
           ],
         ),
       ),
