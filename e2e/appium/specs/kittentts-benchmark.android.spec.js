@@ -496,6 +496,58 @@ async function isDisplayed(accessibilityId) {
   }
 }
 
+async function findDisplayedElement(selectors) {
+  for (const selector of selectors) {
+    try {
+      const element = await $(selector);
+      if (await element.isDisplayed()) {
+        return element;
+      }
+    } catch {
+      // Flutter can expose the same widget differently across platforms.
+    }
+  }
+
+  return null;
+}
+
+async function findBenchmarkTextInput() {
+  const selectors = ["~tts-input"];
+  if (isAndroidSession()) {
+    selectors.push('android=new UiSelector().className("android.widget.EditText")');
+  }
+
+  return findDisplayedElement(selectors);
+}
+
+async function readTextFromElement(element, fallbackId) {
+  const firstText = usableElementText(
+    await element.getText().catch(() => ""),
+    fallbackId
+  );
+
+  if (firstText) {
+    return firstText;
+  }
+
+  const attributeNames = isIosSession()
+    ? ["label", "value", "name"]
+    : ["text", "label", "value", "hint"];
+
+  for (const attributeName of attributeNames) {
+    const attributeText = usableElementText(
+      await element.getAttribute(attributeName).catch(() => ""),
+      fallbackId
+    );
+
+    if (attributeText) {
+      return attributeText;
+    }
+  }
+
+  return "";
+}
+
 async function getPageSourceSummary() {
   try {
     const source = await browser.getPageSource();
@@ -529,9 +581,11 @@ async function waitForAppReady(timeoutMs) {
       console.log(`[KittenTTS app status] ${statusLabel}`);
     }
 
-    const inputVisible = await isDisplayed("tts-input");
     const benchmark = await $("~benchmark-button");
-    if (inputVisible && (await benchmark.isEnabled().catch(() => false))) {
+    if (
+      (await benchmark.isDisplayed().catch(() => false)) &&
+      (await benchmark.isEnabled().catch(() => false))
+    ) {
       return benchmark;
     }
 
@@ -584,11 +638,13 @@ describe("KittenTTS Flutter benchmark", () => {
   it("benchmarks every bundled model and writes a device report", async () => {
     const deviceStartedAtMs = Date.now();
     const benchmark = await waitForAppReady(APP_READY_TIMEOUT_MS);
-    const input = await $("~tts-input");
 
     const sampleText = process.env.TESTMU_SAMPLE_TEXT;
     if (sampleText) {
-      const currentText = await readElementText("tts-input").catch(() => "");
+      const input = await findBenchmarkTextInput();
+      const currentText = input
+        ? await readTextFromElement(input, "tts-input")
+        : "";
       if (shouldOverrideSampleText(currentText, sampleText)) {
         try {
           await input.click();
