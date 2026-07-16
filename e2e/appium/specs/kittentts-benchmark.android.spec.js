@@ -44,7 +44,7 @@ function hasFinishedBenchmark(report) {
 
 async function readBenchmarkReport(accessibilityId) {
   try {
-    const reportText = await $(`~${accessibilityId}`).getText();
+    const reportText = await readElementText(accessibilityId);
     return parseBenchmarkJson(reportText);
   } catch {
     return null;
@@ -69,6 +69,37 @@ function isAndroidSession() {
         getPlatformName()
     )
   );
+}
+
+function androidUiSelectorText(value) {
+  return String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function automationSelectors(accessibilityId) {
+  const selectors = [`~${accessibilityId}`];
+  if (isAndroidSession()) {
+    selectors.push(
+      `android=new UiSelector().descriptionContains("${androidUiSelectorText(
+        accessibilityId
+      )}")`
+    );
+  }
+  return selectors;
+}
+
+async function findElementByAutomationId(accessibilityId) {
+  for (const selector of automationSelectors(accessibilityId)) {
+    try {
+      const element = await $(selector);
+      if (await element.isDisplayed()) {
+        return element;
+      }
+    } catch {
+      // Try the platform fallback selector next.
+    }
+  }
+
+  return null;
 }
 
 async function activateAndroidBenchmarkApp() {
@@ -135,7 +166,10 @@ function shouldOverrideSampleText(currentText, sampleText) {
 }
 
 async function readElementText(accessibilityId) {
-  const element = await $(`~${accessibilityId}`);
+  const element = await findElementByAutomationId(accessibilityId);
+  if (!element) {
+    return "";
+  }
 
   const firstText = usableElementText(
     await element.getText().catch(() => ""),
@@ -148,7 +182,7 @@ async function readElementText(accessibilityId) {
 
   const attributeNames = isIosSession()
     ? ["label", "value", "name"]
-    : ["text", "label", "value"];
+    : ["text", "content-desc", "contentDescription", "name", "hint"];
 
   for (const attributeName of attributeNames) {
     const attributeText = usableElementText(
@@ -314,7 +348,11 @@ async function attachWerAudioChunksFromPager(report) {
     chunksByModel.get(expected.row.model).push(chunk);
 
     if (globalIndex < expectedChunks.length - 1) {
-      await $("~benchmark-audio-next").click();
+      const nextButton = await findElementByAutomationId("benchmark-audio-next");
+      if (!nextButton) {
+        throw new Error("Missing WER audio pager next button.");
+      }
+      await nextButton.click();
     }
   }
 
@@ -476,10 +514,8 @@ function writeDeviceReport(report, startedAtMs) {
 
 async function getOptionalText(accessibilityId) {
   try {
-    const element = await $(`~${accessibilityId}`);
-    if (await element.isDisplayed()) {
-      return await element.getText();
-    }
+    const element = await findElementByAutomationId(accessibilityId);
+    return element ? await readTextFromElement(element, accessibilityId) : null;
   } catch {
     return null;
   }
@@ -489,8 +525,7 @@ async function getOptionalText(accessibilityId) {
 
 async function isDisplayed(accessibilityId) {
   try {
-    const element = await $(`~${accessibilityId}`);
-    return await element.isDisplayed();
+    return Boolean(await findElementByAutomationId(accessibilityId));
   } catch {
     return false;
   }
@@ -512,7 +547,7 @@ async function findDisplayedElement(selectors) {
 }
 
 async function findBenchmarkTextInput() {
-  const selectors = ["~tts-input"];
+  const selectors = automationSelectors("tts-input");
   if (isAndroidSession()) {
     selectors.push('android=new UiSelector().className("android.widget.EditText")');
   }
@@ -532,7 +567,7 @@ async function readTextFromElement(element, fallbackId) {
 
   const attributeNames = isIosSession()
     ? ["label", "value", "name"]
-    : ["text", "label", "value", "hint"];
+    : ["text", "content-desc", "contentDescription", "name", "hint"];
 
   for (const attributeName of attributeNames) {
     const attributeText = usableElementText(
@@ -581,9 +616,9 @@ async function waitForAppReady(timeoutMs) {
       console.log(`[KittenTTS app status] ${statusLabel}`);
     }
 
-    const benchmark = await $("~benchmark-button");
+    const benchmark = await findElementByAutomationId("benchmark-button");
     if (
-      (await benchmark.isDisplayed().catch(() => false)) &&
+      benchmark &&
       (await benchmark.isEnabled().catch(() => false))
     ) {
       return benchmark;
