@@ -472,7 +472,7 @@ jobs:
         env:
           LT_USERNAME: ${{ secrets.LT_USERNAME }}
           LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY }}
-          TESTMU_WEB_URL: http://localhost:4173/?benchmarkAutoStart=true
+          TESTMU_WEB_URL: http://localhost.lambdatest.com:4173/?benchmarkAutoStart=true
           TESTMU_TUNNEL_NAME: kittentts-flutter-web-${{ github.run_id }}-${{ matrix.slug }}
           TESTMU_DEVICE: ${{ matrix.device }}
           TESTMU_PLATFORM_NAME: ${{ matrix.platform }}
@@ -551,7 +551,7 @@ jobs:
         env:
           LT_USERNAME: ${{ secrets.LT_USERNAME }}
           LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY }}
-          TESTMU_WEB_URL: http://localhost:4173/?benchmarkAutoStart=true
+          TESTMU_WEB_URL: http://localhost.lambdatest.com:4173/?benchmarkAutoStart=true
           TESTMU_TUNNEL_NAME: kittentts-flutter-web-${{ github.run_id }}-linux-chrome
           TESTMU_DEVICE: Linux Desktop
           TESTMU_PLATFORM_NAME: Linux
