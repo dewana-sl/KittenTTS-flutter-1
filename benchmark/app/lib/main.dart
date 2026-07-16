@@ -21,7 +21,7 @@ const _defaultSampleText = String.fromEnvironment(
 const _warmRunCount = int.fromEnvironment('TESTMU_WARM_RUNS', defaultValue: 5);
 const _voice = 'bella';
 const _speed = 1.0;
-const _audioChunkSize = 5000;
+const _audioChunkSize = 64000;
 
 const _background = Color(0xFFF8FAFC);
 const _foreground = Color(0xFF101828);

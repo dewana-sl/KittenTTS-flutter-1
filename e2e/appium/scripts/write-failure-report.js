@@ -14,9 +14,16 @@ function slugify(value) {
 
 function findErrorSummary(logText) {
   const lines = stripAnsi(logText).split(/\r?\n/).filter(Boolean);
+  const priorityPatterns = [
+    /Timed out after \d+ minutes/i,
+    /Timed out waiting/i,
+    /Error in "/i,
+    /^Error:\s*Timeout/i,
+  ];
   const usefulPatterns = [
     /App showed error-banner/i,
     /Timed out waiting/i,
+    /Timed out after \d+ minutes/i,
     /still not enabled/i,
     /waitForEnabled/i,
     /no such element/i,
@@ -30,19 +37,29 @@ function findErrorSummary(logText) {
     /Spec Files:/i,
     /^\s*FAILED\s+in/i,
     /^\s*at\s+/i,
+    /stacktrace:/i,
     /node:internal/i,
     /listOnTimeout/i,
     /processTimers/i,
   ];
 
+  const isUseful = (candidate, patterns) =>
+    patterns.some((pattern) => pattern.test(candidate)) &&
+    !noisyPatterns.some((pattern) => pattern.test(candidate));
+
+  const priorityLine = lines
+    .slice()
+    .reverse()
+    .find((candidate) => isUseful(candidate, priorityPatterns));
+
+  if (priorityLine) {
+    return priorityLine.trim().slice(0, 280);
+  }
+
   const line = lines
     .slice()
     .reverse()
-    .find(
-      (candidate) =>
-        usefulPatterns.some((pattern) => pattern.test(candidate)) &&
-        !noisyPatterns.some((pattern) => pattern.test(candidate))
-    );
+    .find((candidate) => isUseful(candidate, usefulPatterns));
 
   return line
     ? line.trim().slice(0, 280)
