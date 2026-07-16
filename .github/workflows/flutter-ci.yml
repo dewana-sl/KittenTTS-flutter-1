@@ -280,6 +280,7 @@ jobs:
   testmu-ios-benchmark:
     name: TestMu iOS benchmark (${{ matrix.device }})
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     needs: ios-package
     strategy:
       fail-fast: false
@@ -316,15 +317,19 @@ jobs:
           TESTMU_PLATFORM_VERSION: ${{ matrix.version }}
           TESTMU_SAMPLE_TEXT: ${{ vars.TESTMU_SAMPLE_TEXT || env.DEFAULT_TESTMU_SAMPLE_TEXT }}
           TESTMU_REQUIRE_WER_AUDIO: "true"
+          GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -o pipefail
           mkdir -p reports
           export BENCHMARK_STARTED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
           set +e
-          npm run test:ios 2>&1 | tee reports/appium-output.log
+          timeout 40m npm run test:ios 2>&1 | tee reports/appium-output.log
           status=${PIPESTATUS[0]}
           set -e
           export BENCHMARK_FINISHED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
+          if [ "$status" -eq 124 ]; then
+            echo "Timed out after 40 minutes while waiting for the TestMu/Appium iOS benchmark to finish." | tee -a reports/appium-output.log
+          fi
           if [ "$status" -ne 0 ] && [ -z "$(find reports -name '*.json' -print -quit)" ]; then
             node scripts/write-failure-report.js
           fi
@@ -341,6 +346,7 @@ jobs:
   testmu-android-benchmark:
     name: TestMu Android benchmark (${{ matrix.device }})
     runs-on: ubuntu-latest
+    timeout-minutes: 50
     needs:
       - android-package
       - testmu-ios-benchmark
@@ -386,15 +392,19 @@ jobs:
           TESTMU_SAMPLE_TEXT: ${{ vars.TESTMU_SAMPLE_TEXT || env.DEFAULT_TESTMU_SAMPLE_TEXT }}
           TESTMU_REQUIRE_WER_AUDIO: "true"
           TESTMU_BENCHMARK_REPORT_TIMEOUT_MS: 2400000
+          GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -o pipefail
           mkdir -p reports
           export BENCHMARK_STARTED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
           set +e
-          npm run test:android 2>&1 | tee reports/appium-output.log
+          timeout 45m npm run test:android 2>&1 | tee reports/appium-output.log
           status=${PIPESTATUS[0]}
           set -e
           export BENCHMARK_FINISHED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
+          if [ "$status" -eq 124 ]; then
+            echo "Timed out after 45 minutes while waiting for the TestMu/Appium Android benchmark to finish." | tee -a reports/appium-output.log
+          fi
           if [ "$status" -ne 0 ] && [ -z "$(find reports -name '*.json' -print -quit)" ]; then
             node scripts/write-failure-report.js
           fi
@@ -411,6 +421,7 @@ jobs:
   testmu-web-benchmark:
     name: TestMu web benchmark (${{ matrix.device }} / ${{ matrix.browser }})
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     needs:
       - web-package
       - testmu-android-benchmark
@@ -480,15 +491,19 @@ jobs:
           TESTMU_BROWSER_NAME: ${{ matrix.browser }}
           TESTMU_SAMPLE_TEXT: ${{ vars.TESTMU_SAMPLE_TEXT || env.DEFAULT_TESTMU_SAMPLE_TEXT }}
           TESTMU_REQUIRE_WER_AUDIO: "true"
+          GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -o pipefail
           mkdir -p reports
           export BENCHMARK_STARTED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
           set +e
-          npm run test:web:browser 2>&1 | tee reports/appium-output.log
+          timeout 40m npm run test:web:browser 2>&1 | tee reports/appium-output.log
           status=${PIPESTATUS[0]}
           set -e
           export BENCHMARK_FINISHED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
+          if [ "$status" -eq 124 ]; then
+            echo "Timed out after 40 minutes while waiting for the TestMu/Appium mobile browser benchmark to finish." | tee -a reports/appium-output.log
+          fi
           if [ "$status" -ne 0 ] && [ -z "$(find reports -name '*.json' -print -quit)" ]; then
             BENCHMARK_FAILED_STAGE="Run TestMu mobile browser benchmark" TESTMU_TARGET=web node scripts/write-failure-report.js
           fi
@@ -505,6 +520,7 @@ jobs:
   testmu-desktop-web-benchmark:
     name: TestMu desktop web benchmark (Linux / Chrome)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     needs:
       - web-package
       - testmu-web-benchmark
@@ -559,15 +575,19 @@ jobs:
           TESTMU_BROWSER_VERSION: latest
           TESTMU_SAMPLE_TEXT: ${{ vars.TESTMU_SAMPLE_TEXT || env.DEFAULT_TESTMU_SAMPLE_TEXT }}
           TESTMU_REQUIRE_WER_AUDIO: "true"
+          GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -o pipefail
           mkdir -p reports
           export BENCHMARK_STARTED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
           set +e
-          npm run test:web:desktop 2>&1 | tee reports/appium-output.log
+          timeout 40m npm run test:web:desktop 2>&1 | tee reports/appium-output.log
           status=${PIPESTATUS[0]}
           set -e
           export BENCHMARK_FINISHED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
+          if [ "$status" -eq 124 ]; then
+            echo "Timed out after 40 minutes while waiting for the TestMu/Appium desktop browser benchmark to finish." | tee -a reports/appium-output.log
+          fi
           if [ "$status" -ne 0 ] && [ -z "$(find reports -name '*.json' -print -quit)" ]; then
             BENCHMARK_FAILED_STAGE="Run TestMu desktop browser benchmark" TESTMU_TARGET=web node scripts/write-failure-report.js
           fi
