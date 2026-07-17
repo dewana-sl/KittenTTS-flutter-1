@@ -54,6 +54,17 @@ function parseBenchmarkJson(rawText) {
   return JSON.parse(rawText.slice(jsonStart, jsonEnd + 1));
 }
 
+function decodeXmlEntities(value) {
+  return String(value || "")
+    .replace(/&quot;/g, '"')
+    .replace(/&#34;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
 function hasFinishedBenchmark(report) {
   return Boolean(report?.finishedAt);
 }
@@ -70,6 +81,12 @@ async function readBenchmarkReport(accessibilityId) {
     } catch {
       // Try the visible JSON block if the compact automation node has no value.
     }
+  }
+
+  try {
+    return parseBenchmarkJson(decodeXmlEntities(await browser.getPageSource()));
+  } catch {
+    // No JSON was visible in the current Android accessibility tree.
   }
 
   return null;

@@ -115,31 +115,18 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
     final startedAt = DateTime.now().toUtc();
     final rows = _benchmarkModelIds.map(_queuedBenchmarkRow).toList();
     final chunks = <_AudioChunk>[];
-    final phonemizerData = await _phonemizerDataFuture;
 
     setState(() {
       _running = true;
-      _status = 'Starting benchmark';
+      _status = 'Loading phonemizer data';
       _errorMessage = null;
       _reportJson = '';
-      _report = {
-        'schemaVersion': 1,
-        'status': 'running',
-        'sampleText': sampleText,
-        'characterLength': sampleText.characters.length,
-        'voice': _voice,
-        'voiceDisplayName': voiceDisplayName(_voice),
-        'speed': _speed,
-        'warmRunCount': _warmRunCount,
-        'ortNumThreads': _ortNumThreads,
-        'ortProviders': _benchmarkOrtProviderNames(),
-        'maxTokensPerChunk': _maxTokensPerChunk,
-        'startedAt': startedAt.toIso8601String(),
-        'finishedAt': null,
-        'rows': rows,
-      };
     });
+    _publishPartialReport(sampleText, startedAt, rows, chunks);
+    await Future<void>.delayed(const Duration(milliseconds: 250));
 
+    final phonemizerData = await _phonemizerDataFuture;
+    _setStatus('Starting benchmark');
     _publishPartialReport(sampleText, startedAt, rows, chunks);
 
     for (final entry in _benchmarkModelIds.asMap().entries) {
