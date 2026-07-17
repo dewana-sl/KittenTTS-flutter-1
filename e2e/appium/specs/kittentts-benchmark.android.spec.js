@@ -8,6 +8,7 @@ const DEFAULT_EXPECTED_MODELS = [
   "kitten-tts-mini-0.8",
 ];
 const EXPECTED_MODELS = resolveExpectedModels();
+const EXPECTED_WARM_RUNS = Number(process.env.TESTMU_EXPECTED_WARM_RUNS || 5);
 const EXPECTED_MODEL_DISPLAY_NAMES = new Map([
   ["kitten-tts-nano-0.8", "Nano (fp32)"],
   ["kitten-tts-nano-0.8-int8", "Nano (int8)"],
@@ -177,10 +178,6 @@ function shouldOverrideSampleText(currentText, sampleText) {
   }
 
   const normalizedCurrentText = String(currentText || "").trim();
-  if (!normalizedCurrentText || normalizedCurrentText === "tts-input") {
-    return false;
-  }
-
   return normalizedCurrentText !== sampleText;
 }
 
@@ -769,9 +766,9 @@ describe("KittenTTS Flutter benchmark", () => {
         expect(row.generationSeconds).toBeGreaterThan(0);
         expect(row.firstGenerationMs).toBeGreaterThan(0);
         expect(row.firstGenerationSeconds).toBeGreaterThan(0);
-        expect(row.warmRunCount).toBe(5);
-        expect(row.warmGenerationMs.length).toBe(5);
-        expect(row.warmRtf.length).toBe(5);
+        expect(row.warmRunCount).toBe(EXPECTED_WARM_RUNS);
+        expect(row.warmGenerationMs.length).toBe(EXPECTED_WARM_RUNS);
+        expect(row.warmRtf.length).toBe(EXPECTED_WARM_RUNS);
         expect(row.warmP50GenerationMs).toBeGreaterThan(0);
         expect(row.warmP95GenerationMs).toBeGreaterThan(0);
         expect(row.warmP50Rtf).toBeGreaterThan(0);
