@@ -1,0 +1,4 @@
+-keep class ai.onnxruntime.** { *; }
+-keep enum ai.onnxruntime.** { *; }
+-keep class com.github.martoreto.flutter_onnxruntime.** { *; }
+-keep class dev.fluttercommunity.plus.** { *; }
