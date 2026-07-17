@@ -203,6 +203,27 @@ async function dismissAndroidSystemDialog() {
   return false;
 }
 
+async function dismissKeyboardIfNeeded() {
+  try {
+    if (typeof browser.hideKeyboard === "function") {
+      await browser.hideKeyboard();
+      await browser.pause(500);
+      return;
+    }
+  } catch {
+    // Some Android sessions report no keyboard even after text entry.
+  }
+
+  if (isAndroidSession()) {
+    try {
+      await browser.pressKeyCode(4);
+      await browser.pause(500);
+    } catch {
+      // The keyboard may already be dismissed.
+    }
+  }
+}
+
 function usableElementText(candidate, accessibilityId) {
   const text = String(candidate || "");
   return text.length > 0 && text !== accessibilityId ? text : "";
@@ -743,7 +764,7 @@ async function waitForBenchmarkReport(timeoutMs) {
 describe("KittenTTS Flutter benchmark", () => {
   it("benchmarks every bundled model and writes a device report", async () => {
     const deviceStartedAtMs = Date.now();
-    const benchmark = await waitForAppReady(APP_READY_TIMEOUT_MS);
+    let benchmark = await waitForAppReady(APP_READY_TIMEOUT_MS);
 
     const sampleText = process.env.TESTMU_SAMPLE_TEXT;
     if (sampleText) {
@@ -761,6 +782,10 @@ describe("KittenTTS Flutter benchmark", () => {
             `[KittenTTS benchmark] Could not override sample text; continuing with the app default. ${error.message}`
           );
         }
+        await dismissKeyboardIfNeeded();
+        benchmark =
+          (await findElementByAutomationId("benchmark-button")) ||
+          (await waitForAppReady(60_000));
       } else {
         console.log(
           `[KittenTTS benchmark] Using app sample text; Appium reported "${currentText || "<empty>"}".`
