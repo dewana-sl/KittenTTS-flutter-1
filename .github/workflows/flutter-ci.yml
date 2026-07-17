@@ -86,9 +86,7 @@ jobs:
           bash tool/download_benchmark_models.sh
           flutter pub get
           flutter build apk --release \
-            --dart-define=TESTMU_MODEL_IDS=nano-int8 \
-            --dart-define=TESTMU_WARM_RUNS=1 \
-            --dart-define=TESTMU_SAMPLE_TEXT="KittenTTS benchmark."
+            --dart-define=TESTMU_MODEL_IDS=nano-int8,nano,micro,mini
           test -f build/app/outputs/flutter-apk/app-release.apk
         working-directory: benchmark/app
 
@@ -156,7 +154,6 @@ jobs:
 
   ios-package:
     name: Benchmark app iOS unsigned IPA
-    if: false
     runs-on: macos-latest
     needs: sdk
     outputs:
@@ -258,7 +255,6 @@ jobs:
 
   web-package:
     name: Benchmark app web build
-    if: false
     runs-on: ubuntu-latest
     needs: sdk
 
@@ -287,7 +283,6 @@ jobs:
 
   testmu-ios-benchmark:
     name: TestMu iOS benchmark (${{ matrix.device }})
-    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 45
     needs: ios-package
@@ -326,6 +321,7 @@ jobs:
           TESTMU_PLATFORM_VERSION: ${{ matrix.version }}
           TESTMU_SAMPLE_TEXT: ${{ vars.TESTMU_SAMPLE_TEXT || env.DEFAULT_TESTMU_SAMPLE_TEXT }}
           TESTMU_EXPECTED_MODELS: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
+          TESTMU_SKIP_SAMPLE_OVERRIDE: "true"
           TESTMU_REQUIRE_WER_AUDIO: "true"
           TESTMU_BENCHMARK_REPORT_TIMEOUT_MS: 900000
           GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -389,24 +385,23 @@ jobs:
           TESTMU_DEVICE: ${{ matrix.device }}
           TESTMU_PLATFORM_NAME: Android
           TESTMU_PLATFORM_VERSION: ${{ matrix.version }}
-          TESTMU_SAMPLE_TEXT: KittenTTS benchmark.
+          TESTMU_SAMPLE_TEXT: ${{ vars.TESTMU_SAMPLE_TEXT || env.DEFAULT_TESTMU_SAMPLE_TEXT }}
           TESTMU_SKIP_SAMPLE_OVERRIDE: "true"
           TESTMU_REQUIRE_WER_AUDIO: "true"
-          TESTMU_EXPECTED_MODELS: kitten-tts-nano-0.8-int8
-          TESTMU_EXPECTED_WARM_RUNS: 1
-          TESTMU_BENCHMARK_REPORT_TIMEOUT_MS: 480000
+          TESTMU_EXPECTED_MODELS: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
+          TESTMU_BENCHMARK_REPORT_TIMEOUT_MS: 2400000
           GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -o pipefail
           mkdir -p reports
           export BENCHMARK_STARTED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
           set +e
-          timeout 12m npm run test:android 2>&1 | tee reports/appium-output.log
+          timeout 40m npm run test:android 2>&1 | tee reports/appium-output.log
           status=${PIPESTATUS[0]}
           set -e
           export BENCHMARK_FINISHED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
           if [ "$status" -eq 124 ]; then
-            echo "Timed out after 12 minutes while waiting for the TestMu/Appium Android benchmark to finish." | tee -a reports/appium-output.log
+            echo "Timed out after 40 minutes while waiting for the TestMu/Appium Android benchmark to finish." | tee -a reports/appium-output.log
           fi
           if [ "$status" -ne 0 ] && [ -z "$(find reports -name '*.json' -print -quit)" ]; then
             node scripts/write-failure-report.js
@@ -423,7 +418,6 @@ jobs:
 
   testmu-web-benchmark:
     name: TestMu web benchmark (${{ matrix.device }} / ${{ matrix.browser }})
-    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 45
     needs:
@@ -524,7 +518,6 @@ jobs:
 
   testmu-desktop-web-benchmark:
     name: TestMu desktop web benchmark (Linux / Chrome)
-    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 45
     needs:
@@ -612,7 +605,11 @@ jobs:
     name: Benchmark report
     runs-on: ubuntu-latest
     if: always()
-    needs: testmu-android-benchmark
+    needs:
+      - testmu-android-benchmark
+      - testmu-ios-benchmark
+      - testmu-web-benchmark
+      - testmu-desktop-web-benchmark
 
     steps:
       - uses: actions/checkout@v4
