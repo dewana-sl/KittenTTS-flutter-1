@@ -273,7 +273,10 @@ jobs:
           set -euo pipefail
           bash tool/download_benchmark_models.sh
           flutter pub get
-          flutter build web --release
+          flutter build web --release \
+            --dart-define=TESTMU_MODEL_IDS=nano-int8 \
+            --dart-define=TESTMU_WARM_RUNS=1 \
+            --dart-define=TESTMU_SAMPLE_TEXT="KittenTTS web benchmark."
           test -f build/web/index.html
         working-directory: benchmark/app
 
@@ -491,6 +494,8 @@ jobs:
           TESTMU_PLATFORM_VERSION: ${{ matrix.version }}
           TESTMU_BROWSER_NAME: ${{ matrix.browser }}
           TESTMU_SAMPLE_TEXT: ${{ vars.TESTMU_SAMPLE_TEXT || env.DEFAULT_TESTMU_SAMPLE_TEXT }}
+          TESTMU_EXPECTED_MODELS: kitten-tts-nano-0.8-int8
+          TESTMU_EXPECTED_WARM_RUNS: 1
           TESTMU_REQUIRE_WER_AUDIO: "true"
           TESTMU_BENCHMARK_REPORT_TIMEOUT_MS: 2400000
           GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -576,6 +581,8 @@ jobs:
           TESTMU_BROWSER_NAME: Chrome
           TESTMU_BROWSER_VERSION: latest
           TESTMU_SAMPLE_TEXT: ${{ vars.TESTMU_SAMPLE_TEXT || env.DEFAULT_TESTMU_SAMPLE_TEXT }}
+          TESTMU_EXPECTED_MODELS: kitten-tts-nano-0.8-int8
+          TESTMU_EXPECTED_WARM_RUNS: 1
           TESTMU_REQUIRE_WER_AUDIO: "true"
           TESTMU_BENCHMARK_REPORT_TIMEOUT_MS: 2400000
           GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
