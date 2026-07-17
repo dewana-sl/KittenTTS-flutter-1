@@ -67,7 +67,6 @@ jobs:
 
   android-package:
     name: Benchmark app Android APK
-    if: false
     runs-on: ubuntu-latest
     needs: sdk
     outputs:
@@ -155,7 +154,6 @@ jobs:
 
   ios-package:
     name: Benchmark app iOS unsigned IPA
-    if: false
     runs-on: macos-latest
     needs: sdk
     outputs:
@@ -273,10 +271,7 @@ jobs:
           set -euo pipefail
           bash tool/download_benchmark_models.sh
           flutter pub get
-          flutter build web --release \
-            --dart-define=TESTMU_MODEL_IDS=nano-int8 \
-            --dart-define=TESTMU_WARM_RUNS=1 \
-            --dart-define=TESTMU_SAMPLE_TEXT="KittenTTS web benchmark."
+          flutter build web --release
           test -f build/web/index.html
         working-directory: benchmark/app
 
@@ -288,7 +283,6 @@ jobs:
 
   testmu-ios-benchmark:
     name: TestMu iOS benchmark (${{ matrix.device }})
-    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 45
     needs: ios-package
@@ -358,7 +352,6 @@ jobs:
 
   testmu-android-benchmark:
     name: TestMu Android benchmark (${{ matrix.device }})
-    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 50
     needs: android-package
@@ -429,6 +422,7 @@ jobs:
     timeout-minutes: 45
     needs:
       - web-package
+      - testmu-android-benchmark
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -494,8 +488,8 @@ jobs:
           TESTMU_PLATFORM_VERSION: ${{ matrix.version }}
           TESTMU_BROWSER_NAME: ${{ matrix.browser }}
           TESTMU_SAMPLE_TEXT: ${{ vars.TESTMU_SAMPLE_TEXT || env.DEFAULT_TESTMU_SAMPLE_TEXT }}
-          TESTMU_EXPECTED_MODELS: kitten-tts-nano-0.8-int8
-          TESTMU_EXPECTED_WARM_RUNS: 1
+          TESTMU_EXPECTED_MODELS: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
+          TESTMU_EXPECTED_WARM_RUNS: 5
           TESTMU_REQUIRE_WER_AUDIO: "true"
           TESTMU_BENCHMARK_REPORT_TIMEOUT_MS: 2400000
           GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -581,8 +575,8 @@ jobs:
           TESTMU_BROWSER_NAME: Chrome
           TESTMU_BROWSER_VERSION: latest
           TESTMU_SAMPLE_TEXT: ${{ vars.TESTMU_SAMPLE_TEXT || env.DEFAULT_TESTMU_SAMPLE_TEXT }}
-          TESTMU_EXPECTED_MODELS: kitten-tts-nano-0.8-int8
-          TESTMU_EXPECTED_WARM_RUNS: 1
+          TESTMU_EXPECTED_MODELS: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
+          TESTMU_EXPECTED_WARM_RUNS: 5
           TESTMU_REQUIRE_WER_AUDIO: "true"
           TESTMU_BENCHMARK_REPORT_TIMEOUT_MS: 2400000
           GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -616,6 +610,8 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     needs:
+      - testmu-ios-benchmark
+      - testmu-android-benchmark
       - testmu-web-benchmark
       - testmu-desktop-web-benchmark
 
