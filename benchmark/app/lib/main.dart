@@ -28,9 +28,11 @@ const _maxTokensPerChunk = int.fromEnvironment(
   'TESTMU_MAX_TOKENS_PER_CHUNK',
   defaultValue: 96,
 );
+const _modelIdsCsv = String.fromEnvironment('TESTMU_MODEL_IDS');
 const _voice = 'bella';
 const _speed = 1.0;
 const _audioChunkSize = 64000;
+final _benchmarkModelIds = _resolveBenchmarkModelIds();
 
 const _background = Color(0xFFF8FAFC);
 const _foreground = Color(0xFF101828);
@@ -110,7 +112,7 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
     }
 
     final startedAt = DateTime.now().toUtc();
-    final rows = allKittenTTSModelIds.map(_queuedBenchmarkRow).toList();
+    final rows = _benchmarkModelIds.map(_queuedBenchmarkRow).toList();
     final chunks = <_AudioChunk>[];
     final phonemizerData = await _phonemizerDataFuture;
 
@@ -138,7 +140,7 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
 
     _publishPartialReport(sampleText, startedAt, rows, chunks);
 
-    for (final entry in allKittenTTSModelIds.asMap().entries) {
+    for (final entry in _benchmarkModelIds.asMap().entries) {
       final modelId = entry.value;
       final modelName = modelRepoId(modelId);
       final row = rows[entry.key];
@@ -624,6 +626,16 @@ String _hashBytes(Uint8List bytes) {
     hash = (hash * 0x01000193) & 0xffffffff;
   }
   return hash.toRadixString(16).padLeft(8, '0').substring(0, 8);
+}
+
+List<KittenTTSModelId> _resolveBenchmarkModelIds() {
+  final requested = _modelIdsCsv
+      .split(',')
+      .map((value) => value.trim())
+      .where((value) => value.isNotEmpty)
+      .toList(growable: false);
+  if (requested.isEmpty) return allKittenTTSModelIds;
+  return requested.map(validateModel).toList(growable: false);
 }
 
 String _slugify(String value) {

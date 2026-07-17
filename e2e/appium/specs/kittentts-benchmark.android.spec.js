@@ -1,12 +1,13 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const EXPECTED_MODELS = [
+const DEFAULT_EXPECTED_MODELS = [
   "kitten-tts-nano-0.8",
   "kitten-tts-nano-0.8-int8",
   "kitten-tts-micro-0.8",
   "kitten-tts-mini-0.8",
 ];
+const EXPECTED_MODELS = resolveExpectedModels();
 const EXPECTED_MODEL_DISPLAY_NAMES = new Map([
   ["kitten-tts-nano-0.8", "Nano (fp32)"],
   ["kitten-tts-nano-0.8-int8", "Nano (int8)"],
@@ -31,6 +32,14 @@ function slugify(value) {
 
 function automationSlug(value) {
   return slugify(value);
+}
+
+function resolveExpectedModels() {
+  const requested = String(process.env.TESTMU_EXPECTED_MODELS || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return requested.length > 0 ? requested : DEFAULT_EXPECTED_MODELS;
 }
 
 function parseBenchmarkJson(rawText) {

@@ -85,7 +85,8 @@ jobs:
           set -euo pipefail
           bash tool/download_benchmark_models.sh
           flutter pub get
-          flutter build apk --release
+          flutter build apk --release \
+            --dart-define=TESTMU_MODEL_IDS=nano-int8,nano,micro,mini
           test -f build/app/outputs/flutter-apk/app-release.apk
         working-directory: benchmark/app
 
@@ -322,8 +323,9 @@ jobs:
           TESTMU_PLATFORM_NAME: iOS
           TESTMU_PLATFORM_VERSION: ${{ matrix.version }}
           TESTMU_SAMPLE_TEXT: ${{ vars.TESTMU_SAMPLE_TEXT || env.DEFAULT_TESTMU_SAMPLE_TEXT }}
+          TESTMU_EXPECTED_MODELS: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
           TESTMU_REQUIRE_WER_AUDIO: "true"
-          TESTMU_BENCHMARK_REPORT_TIMEOUT_MS: 2400000
+          TESTMU_BENCHMARK_REPORT_TIMEOUT_MS: 900000
           GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -o pipefail
@@ -394,12 +396,12 @@ jobs:
           mkdir -p reports
           export BENCHMARK_STARTED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
           set +e
-          timeout 45m npm run test:android 2>&1 | tee reports/appium-output.log
+          timeout 20m npm run test:android 2>&1 | tee reports/appium-output.log
           status=${PIPESTATUS[0]}
           set -e
           export BENCHMARK_FINISHED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
           if [ "$status" -eq 124 ]; then
-            echo "Timed out after 45 minutes while waiting for the TestMu/Appium Android benchmark to finish." | tee -a reports/appium-output.log
+            echo "Timed out after 20 minutes while waiting for the TestMu/Appium Android benchmark to finish." | tee -a reports/appium-output.log
           fi
           if [ "$status" -ne 0 ] && [ -z "$(find reports -name '*.json' -print -quit)" ]; then
             node scripts/write-failure-report.js
