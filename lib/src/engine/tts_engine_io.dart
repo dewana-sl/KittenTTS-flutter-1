@@ -51,7 +51,10 @@ class TTSEngine {
       final runtime = OnnxRuntime();
       final session = await runtime.createSession(
         modelPath,
-        options: OrtSessionOptions(intraOpNumThreads: config.ortNumThreads),
+        options: OrtSessionOptions(
+          intraOpNumThreads: config.ortNumThreads,
+          providers: config.ortProviders,
+        ),
       );
       final outputNames = session.outputNames;
       final waveformOutputName = outputNames.contains('waveform')

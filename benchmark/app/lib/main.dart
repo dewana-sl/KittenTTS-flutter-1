@@ -33,6 +33,10 @@ const _voice = 'bella';
 const _speed = 1.0;
 const _audioChunkSize = 64000;
 final _benchmarkModelIds = _resolveBenchmarkModelIds();
+const _benchmarkOrtProviders = <OrtProvider>[
+  OrtProvider.XNNPACK,
+  OrtProvider.CPU,
+];
 
 const _background = Color(0xFFF8FAFC);
 const _foreground = Color(0xFF101828);
@@ -131,6 +135,9 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
         'speed': _speed,
         'warmRunCount': _warmRunCount,
         'ortNumThreads': _ortNumThreads,
+        'ortProviders': _benchmarkOrtProviders
+            .map((item) => item.name)
+            .toList(),
         'maxTokensPerChunk': _maxTokensPerChunk,
         'startedAt': startedAt.toIso8601String(),
         'finishedAt': null,
@@ -156,6 +163,7 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
             model: modelId,
             analytics: false,
             ortNumThreads: _ortNumThreads,
+            ortProviders: _benchmarkOrtProviders,
             maxTokensPerChunk: _maxTokensPerChunk,
             modelFiles: modelFiles,
             phonemizer: CEPhonemizer(
@@ -343,6 +351,7 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
       'speed': _speed,
       'warmRunCount': _warmRunCount,
       'ortNumThreads': _ortNumThreads,
+      'ortProviders': _benchmarkOrtProviders.map((item) => item.name).toList(),
       'maxTokensPerChunk': _maxTokensPerChunk,
       'startedAt': startedAt.toIso8601String(),
       'finishedAt': finishedAt?.toIso8601String(),

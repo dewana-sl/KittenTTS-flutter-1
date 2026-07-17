@@ -1,3 +1,5 @@
+import 'package:flutter_onnxruntime/flutter_onnxruntime.dart' show OrtProvider;
+
 import 'kitten_model.dart';
 import 'kitten_voice.dart';
 import 'platform/kitten_platform.dart';
@@ -26,6 +28,7 @@ class KittenTTSConfig {
     this.modelFiles,
     this.downloadRetries = 4,
     this.ortNumThreads = 4,
+    this.ortProviders,
     this.maxTokensPerChunk = 400,
     this.trimTrailingSilence = true,
     this.silenceThreshold = 0.005,
@@ -42,6 +45,7 @@ class KittenTTSConfig {
   final KittenTTSModelFiles? modelFiles;
   final int downloadRetries;
   final int ortNumThreads;
+  final List<OrtProvider>? ortProviders;
   final int maxTokensPerChunk;
   final bool trimTrailingSilence;
   final double silenceThreshold;
@@ -60,6 +64,7 @@ class ResolvedKittenTTSConfig {
     required this.modelFiles,
     required this.downloadRetries,
     required this.ortNumThreads,
+    required this.ortProviders,
     required this.maxTokensPerChunk,
     required this.trimTrailingSilence,
     required this.silenceThreshold,
@@ -76,6 +81,7 @@ class ResolvedKittenTTSConfig {
   final KittenTTSModelFiles? modelFiles;
   final int downloadRetries;
   final int ortNumThreads;
+  final List<OrtProvider>? ortProviders;
   final int maxTokensPerChunk;
   final bool trimTrailingSilence;
   final double silenceThreshold;
@@ -96,6 +102,7 @@ Future<ResolvedKittenTTSConfig> resolveConfig(KittenTTSConfig? config) async {
     modelFiles: config?.modelFiles,
     downloadRetries: (config?.downloadRetries ?? 4).clamp(1, 1000),
     ortNumThreads: (config?.ortNumThreads ?? 4).clamp(1, 128),
+    ortProviders: config?.ortProviders,
     maxTokensPerChunk: (config?.maxTokensPerChunk ?? 400).clamp(50, 100000),
     trimTrailingSilence: config?.trimTrailingSilence ?? true,
     silenceThreshold: (config?.silenceThreshold ?? 0.005).clamp(0, 1),

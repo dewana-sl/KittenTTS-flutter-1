@@ -4,6 +4,7 @@ export 'src/audio/audio_output.dart';
 export 'src/audio/mp3_encoder.dart';
 export 'src/audio/playback_queue.dart';
 export 'src/audio/wav_encoder.dart';
+export 'package:flutter_onnxruntime/flutter_onnxruntime.dart' show OrtProvider;
 export 'src/kitten_model.dart';
 export 'src/kitten_tts.dart';
 export 'src/kitten_tts_config.dart';

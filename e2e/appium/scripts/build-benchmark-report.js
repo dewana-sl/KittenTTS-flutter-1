@@ -451,6 +451,11 @@ function buildSummary(reports) {
       firstPassed.speed === undefined ? "unavailable" : `${firstPassed.speed}x`
     } |`,
     `| ORT threads | ${firstPassed.ortNumThreads || "unavailable"} |`,
+    `| ORT providers | ${escapeMarkdown(
+      Array.isArray(firstPassed.ortProviders)
+        ? firstPassed.ortProviders.join(", ")
+        : firstPassed.ortProviders || "unavailable"
+    )} |`,
     `| Max tokens/chunk | ${firstPassed.maxTokensPerChunk || "unavailable"} |`,
     `| Devices completed / partial / failed | ${completedReports.length} / ${partialReports.length} / ${failedReports.length} |`,
     `| Parakeet WER rows | ${summarizeParakeetWer(reports)} |`,
@@ -526,6 +531,7 @@ function buildCsv(reports) {
     "voice",
     "speed",
     "ortNumThreads",
+    "ortProviders",
     "maxTokensPerChunk",
     "totalRuntimeSeconds",
     "model",
@@ -586,6 +592,9 @@ function buildCsv(reports) {
           report.voiceDisplayName || report.voice,
           report.speed,
           report.ortNumThreads || "",
+          Array.isArray(report.ortProviders)
+            ? report.ortProviders.join("|")
+            : report.ortProviders || "",
           report.maxTokensPerChunk || "",
           getTotalRuntimeSeconds(report),
           ...emptyMetricCells,
@@ -615,6 +624,9 @@ function buildCsv(reports) {
           report.voiceDisplayName || report.voice,
           report.speed,
           report.ortNumThreads || "",
+          Array.isArray(report.ortProviders)
+            ? report.ortProviders.join("|")
+            : report.ortProviders || "",
           report.maxTokensPerChunk || "",
           getTotalRuntimeSeconds(report),
           row.model,
