@@ -63,12 +63,16 @@ function expectedModelDisplayName(model) {
 }
 
 async function readBenchmarkReport(accessibilityId) {
-  try {
-    const reportText = await readElementText(accessibilityId);
-    return parseBenchmarkJson(reportText);
-  } catch {
-    return null;
+  for (const candidateId of [accessibilityId, "benchmark-json-visible"]) {
+    try {
+      const reportText = await readElementText(candidateId);
+      return parseBenchmarkJson(reportText);
+    } catch {
+      // Try the visible JSON block if the compact automation node has no value.
+    }
   }
+
+  return null;
 }
 
 function isIosSession() {
@@ -112,6 +116,21 @@ async function findElementByAutomationId(accessibilityId) {
     try {
       const element = await $(selector);
       if (await element.isDisplayed()) {
+        return element;
+      }
+    } catch {
+      // Try the platform fallback selector next.
+    }
+  }
+
+  return null;
+}
+
+async function findReadableElementByAutomationId(accessibilityId) {
+  for (const selector of automationSelectors(accessibilityId)) {
+    try {
+      const element = await $(selector);
+      if (element?.elementId) {
         return element;
       }
     } catch {
@@ -182,7 +201,7 @@ function shouldOverrideSampleText(currentText, sampleText) {
 }
 
 async function readElementText(accessibilityId) {
-  const element = await findElementByAutomationId(accessibilityId);
+  const element = await findReadableElementByAutomationId(accessibilityId);
   if (!element) {
     return "";
   }
