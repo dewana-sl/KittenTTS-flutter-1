@@ -33,10 +33,7 @@ const _voice = 'bella';
 const _speed = 1.0;
 const _audioChunkSize = 64000;
 final _benchmarkModelIds = _resolveBenchmarkModelIds();
-const _benchmarkOrtProviders = <OrtProvider>[
-  OrtProvider.XNNPACK,
-  OrtProvider.CPU,
-];
+const List<OrtProvider>? _benchmarkOrtProviders = null;
 
 const _background = Color(0xFFF8FAFC);
 const _foreground = Color(0xFF101828);
@@ -135,9 +132,7 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
         'speed': _speed,
         'warmRunCount': _warmRunCount,
         'ortNumThreads': _ortNumThreads,
-        'ortProviders': _benchmarkOrtProviders
-            .map((item) => item.name)
-            .toList(),
+        'ortProviders': _benchmarkOrtProviderNames(),
         'maxTokensPerChunk': _maxTokensPerChunk,
         'startedAt': startedAt.toIso8601String(),
         'finishedAt': null,
@@ -155,8 +150,25 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
 
       KittenTTS? tts;
       try {
-        _setStatus('Loading ${modelDisplayName(modelId)}');
+        await _markRowRunning(
+          sampleText,
+          startedAt,
+          rows,
+          chunks,
+          row,
+          modelId,
+          'Copying ${modelDisplayName(modelId)} assets',
+        );
         final modelFiles = await resolveBenchmarkModelFiles(modelId);
+        await _markRowRunning(
+          sampleText,
+          startedAt,
+          rows,
+          chunks,
+          row,
+          modelId,
+          'Loading ${modelDisplayName(modelId)}',
+        );
         final loadStarted = Stopwatch()..start();
         tts = await KittenTTS.create(
           config: KittenTTSConfig(
@@ -178,12 +190,26 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
         );
         loadStarted.stop();
 
-        _setStatus('Cold run ${modelDisplayName(modelId)}');
+        await _markRowRunning(
+          sampleText,
+          startedAt,
+          rows,
+          chunks,
+          row,
+          modelId,
+          'Cold run ${modelDisplayName(modelId)}',
+        );
         final first = await _timedGenerate(tts, sampleText);
         final warm = <_TimedGeneration>[];
 
         for (var index = 0; index < _warmRunCount; index += 1) {
-          _setStatus(
+          await _markRowRunning(
+            sampleText,
+            startedAt,
+            rows,
+            chunks,
+            row,
+            modelId,
             'Warm run ${index + 1}/$_warmRunCount ${modelDisplayName(modelId)}',
           );
           warm.add(await _timedGenerate(tts, sampleText));
@@ -303,6 +329,30 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
     setState(() => _status = status);
   }
 
+  Future<void> _markRowRunning(
+    String sampleText,
+    DateTime startedAt,
+    List<Map<String, Object?>> rows,
+    List<_AudioChunk> chunks,
+    Map<String, Object?> row,
+    KittenTTSModelId modelId,
+    String stage,
+  ) async {
+    row
+      ..clear()
+      ..addAll({
+        'model': modelRepoId(modelId),
+        'modelId': modelId,
+        'modelDisplayName': modelDisplayName(modelId),
+        'status': 'running',
+        'failedStage': stage,
+        'errorSummary': 'Model is still running at this stage.',
+      });
+    _setStatus(stage);
+    _publishPartialReport(sampleText, startedAt, rows, chunks);
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+  }
+
   Map<String, Object?> _queuedBenchmarkRow(KittenTTSModelId modelId) {
     return {
       'model': modelRepoId(modelId),
@@ -351,12 +401,16 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
       'speed': _speed,
       'warmRunCount': _warmRunCount,
       'ortNumThreads': _ortNumThreads,
-      'ortProviders': _benchmarkOrtProviders.map((item) => item.name).toList(),
+      'ortProviders': _benchmarkOrtProviderNames(),
       'maxTokensPerChunk': _maxTokensPerChunk,
       'startedAt': startedAt.toIso8601String(),
       'finishedAt': finishedAt?.toIso8601String(),
       'rows': rows,
     };
+  }
+
+  List<String>? _benchmarkOrtProviderNames() {
+    return _benchmarkOrtProviders?.map((item) => item.name).toList();
   }
 
   List<_AudioChunk> _splitAudio(String rowSlug, String wavBase64) {
