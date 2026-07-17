@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:kittentts_flutter/kittentts_flutter.dart';
 
+import 'benchmark_model_assets.dart';
 import 'web_bridge.dart';
 
 void main() {
@@ -141,11 +142,13 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
       KittenTTS? tts;
       try {
         _setStatus('Loading ${modelDisplayName(modelId)}');
+        final modelFiles = await resolveBenchmarkModelFiles(modelId);
         final loadStarted = Stopwatch()..start();
         tts = await KittenTTS.create(
           config: KittenTTSConfig(
             model: modelId,
             analytics: false,
+            modelFiles: modelFiles,
             phonemizer: CEPhonemizer(
               rulesText: phonemizerData.rulesText,
               listText: phonemizerData.listText,

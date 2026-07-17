@@ -83,6 +83,7 @@ jobs:
       - name: Build release APK
         run: |
           set -euo pipefail
+          bash tool/download_benchmark_models.sh
           flutter pub get
           flutter build apk --release
           test -f build/app/outputs/flutter-apk/app-release.apk
@@ -175,6 +176,7 @@ jobs:
       - name: Build unsigned iOS app and package IPA
         run: |
           set -euo pipefail
+          bash tool/download_benchmark_models.sh
           flutter pub get
           flutter build ios --release --no-codesign
 
@@ -266,6 +268,7 @@ jobs:
       - name: Build web benchmark app
         run: |
           set -euo pipefail
+          bash tool/download_benchmark_models.sh
           flutter pub get
           flutter build web --release
           test -f build/web/index.html
