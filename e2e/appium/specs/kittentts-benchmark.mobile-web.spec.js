@@ -103,6 +103,18 @@ async function readBenchmarkReport(testId) {
 }
 
 async function attachWerAudioChunksDirect(report) {
+  const bridgedChunks = await browser
+    .execute(() => {
+      if (
+        typeof globalThis.__KITTEN_GET_BENCHMARK_AUDIO_CHUNKS_JSON__ ===
+        "function"
+      ) {
+        return globalThis.__KITTEN_GET_BENCHMARK_AUDIO_CHUNKS_JSON__();
+      }
+      return "";
+    })
+    .then((payload) => (payload ? JSON.parse(payload) : {}))
+    .catch(() => ({}));
   const rows = [];
 
   for (const row of report.rows || []) {
@@ -121,7 +133,7 @@ async function attachWerAudioChunksDirect(report) {
     const chunks = [];
     for (let index = 0; index < chunkCount; index += 1) {
       const testId = `benchmark-audio-${rowSlug}-${index}`;
-      const chunk = await readElementText(testId);
+      const chunk = bridgedChunks[testId] || (await readElementText(testId));
       if (!chunk) {
         throw new Error(
           `Missing WER audio chunk ${index + 1}/${chunkCount} for ${

@@ -8,6 +8,7 @@ external JSObject get _globalThis;
 extension type _BenchmarkGlobal(JSObject _) implements JSObject {
   external set __KITTEN_START_BENCHMARK__(JSFunction? value);
   external set __KITTEN_GET_BENCHMARK_REPORT_JSON__(JSFunction? value);
+  external set __KITTEN_GET_BENCHMARK_AUDIO_CHUNKS_JSON__(JSFunction? value);
   external set __KITTEN_GET_BENCHMARK_ERROR__(JSFunction? value);
 }
 
@@ -18,6 +19,7 @@ bool get benchmarkAutoStart {
 void setBenchmarkBindings({
   required Future<void> Function() start,
   required String Function() reportJson,
+  required String Function() audioChunksJson,
   required String? Function() error,
 }) {
   final global = _BenchmarkGlobal(_globalThis);
@@ -25,6 +27,8 @@ void setBenchmarkBindings({
     start();
   }).toJS;
   global.__KITTEN_GET_BENCHMARK_REPORT_JSON__ = (() => reportJson()).toJS;
+  global.__KITTEN_GET_BENCHMARK_AUDIO_CHUNKS_JSON__ =
+      (() => audioChunksJson()).toJS;
   global.__KITTEN_GET_BENCHMARK_ERROR__ = (() => error() ?? '').toJS;
 }
 
@@ -32,5 +36,6 @@ void clearBenchmarkBindings() {
   final global = _BenchmarkGlobal(_globalThis);
   global.__KITTEN_START_BENCHMARK__ = null;
   global.__KITTEN_GET_BENCHMARK_REPORT_JSON__ = null;
+  global.__KITTEN_GET_BENCHMARK_AUDIO_CHUNKS_JSON__ = null;
   global.__KITTEN_GET_BENCHMARK_ERROR__ = null;
 }

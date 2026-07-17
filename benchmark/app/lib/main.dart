@@ -89,6 +89,7 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
     setBenchmarkBindings(
       start: _runBenchmark,
       reportJson: () => _reportJson,
+      audioChunksJson: _audioChunksJson,
       error: () => _errorMessage,
     );
     if (benchmarkAutoStart) {
@@ -416,6 +417,12 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
       );
     }
     return chunks;
+  }
+
+  String _audioChunksJson() {
+    return jsonEncode({
+      for (final chunk in _audioChunks) chunk.accessibilityId: chunk.value,
+    });
   }
 
   String _friendlyError(Object error) {
