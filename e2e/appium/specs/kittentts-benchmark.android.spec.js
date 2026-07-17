@@ -686,6 +686,53 @@ async function getPageSourceSummary() {
   }
 }
 
+async function collectAndroidFailureContext() {
+  if (!isAndroidSession()) {
+    return "";
+  }
+
+  const details = [];
+  try {
+    details.push(`Current package: ${await browser.getCurrentPackage()}`);
+  } catch (error) {
+    details.push(`Current package unavailable: ${error.message}`);
+  }
+
+  try {
+    const sourceSummary = await getPageSourceSummary();
+    details.push(`Page source: ${sourceSummary}`);
+  } catch {
+    // getPageSourceSummary already protects itself.
+  }
+
+  try {
+    const logs = await browser.getLogs("logcat");
+    const interesting = logs
+      .map((entry) => String(entry.message || entry))
+      .filter((line) =>
+        /AndroidRuntime|FATAL EXCEPTION|com\.kittenml|kittentts|flutter|onnx|ort|libc|crash/i.test(
+          line
+        )
+      )
+      .slice(-120);
+    if (interesting.length > 0) {
+      const logcat = interesting.join("\n");
+      fs.mkdirSync(path.join(process.cwd(), "reports"), { recursive: true });
+      fs.writeFileSync(
+        path.join(process.cwd(), "reports", "android-logcat-tail.log"),
+        `${logcat}\n`
+      );
+      details.push(`Logcat tail:\n${logcat.slice(-4000)}`);
+    } else {
+      details.push("Logcat tail: no matching AndroidRuntime/Flutter/ORT lines.");
+    }
+  } catch (error) {
+    details.push(`Logcat unavailable: ${error.message}`);
+  }
+
+  return details.join("\n");
+}
+
 async function waitForAppReady(timeoutMs) {
   const startedAt = Date.now();
   let lastStatus = "No app status captured yet.";
@@ -758,7 +805,10 @@ async function waitForBenchmarkReport(timeoutMs) {
     return markPartialReport(lastReport, timeoutMessage);
   }
 
-  throw new Error(timeoutMessage);
+  const failureContext = await collectAndroidFailureContext();
+  throw new Error(
+    failureContext ? `${timeoutMessage}\n${failureContext}` : timeoutMessage
+  );
 }
 
 describe("KittenTTS Flutter benchmark", () => {
