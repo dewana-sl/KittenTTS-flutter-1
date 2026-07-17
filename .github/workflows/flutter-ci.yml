@@ -390,6 +390,7 @@ jobs:
           TESTMU_PLATFORM_NAME: Android
           TESTMU_PLATFORM_VERSION: ${{ matrix.version }}
           TESTMU_SAMPLE_TEXT: KittenTTS benchmark.
+          TESTMU_SKIP_SAMPLE_OVERRIDE: "true"
           TESTMU_REQUIRE_WER_AUDIO: "true"
           TESTMU_EXPECTED_MODELS: kitten-tts-nano-0.8-int8
           TESTMU_EXPECTED_WARM_RUNS: 1

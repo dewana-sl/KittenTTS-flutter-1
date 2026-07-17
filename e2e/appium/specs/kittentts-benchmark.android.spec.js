@@ -230,6 +230,10 @@ function usableElementText(candidate, accessibilityId) {
 }
 
 function shouldOverrideSampleText(currentText, sampleText) {
+  if (process.env.TESTMU_SKIP_SAMPLE_OVERRIDE === "true") {
+    return false;
+  }
+
   if (!sampleText) {
     return false;
   }
@@ -844,6 +848,26 @@ describe("KittenTTS Flutter benchmark", () => {
     }
 
     await benchmark.click();
+    if (isAndroidSession()) {
+      try {
+        console.log(
+          `[KittenTTS benchmark] Package after benchmark tap: ${await browser.getCurrentPackage()}`
+        );
+      } catch (error) {
+        console.warn(
+          `[KittenTTS benchmark] Could not read package after benchmark tap: ${error.message}`
+        );
+      }
+
+      const immediateReport = await getBenchmarkReportFromUi();
+      if (immediateReport) {
+        console.log(
+          `[KittenTTS benchmark] Immediate report status after tap: ${immediateReport.status || "unknown"}`
+        );
+      } else {
+        console.log("[KittenTTS benchmark] No immediate report after tap.");
+      }
+    }
 
     const report = await waitForBenchmarkReport(BENCHMARK_REPORT_TIMEOUT_MS);
 
