@@ -229,6 +229,16 @@ function usableElementText(candidate, accessibilityId) {
   return text.length > 0 && text !== accessibilityId ? text : "";
 }
 
+function stripFlutterSemanticsLabel(value, accessibilityId) {
+  let text = String(value || "");
+  const marker = `, ${accessibilityId}`;
+  const markerIndex = text.indexOf(marker);
+  if (markerIndex >= 0) {
+    text = text.slice(0, markerIndex);
+  }
+  return text.trim();
+}
+
 function shouldOverrideSampleText(currentText, sampleText) {
   if (process.env.TESTMU_SKIP_SAMPLE_OVERRIDE === "true") {
     return false;
@@ -355,7 +365,10 @@ async function attachWerAudioChunksDirect(report) {
     const chunks = [];
     for (let index = 0; index < chunkCount; index += 1) {
       const accessibilityId = `benchmark-audio-${rowSlug}-${index}`;
-      const chunk = await readElementText(accessibilityId);
+      const chunk = stripFlutterSemanticsLabel(
+        await readElementText(accessibilityId),
+        accessibilityId
+      );
       if (!chunk) {
         throw new Error(
           `Missing WER audio chunk ${index + 1}/${chunkCount} for ${row.model} (${accessibilityId}).`
@@ -415,7 +428,10 @@ async function attachWerAudioChunksFromPager(report) {
     const expected = expectedChunks[globalIndex];
     await waitForAudioPagerKey(expected.key, globalIndex, expectedChunks.length);
 
-    const chunk = await readElementText("benchmark-audio-current");
+    const chunk = stripFlutterSemanticsLabel(
+      await readElementText("benchmark-audio-current"),
+      "benchmark-audio-current"
+    );
     if (!chunk) {
       throw new Error(
         `Missing WER audio chunk ${expected.index + 1}/${expected.chunkCount} for ${expected.row.model} (${expected.key}).`
@@ -467,7 +483,10 @@ async function waitForAudioPagerKey(expectedKey, globalIndex, totalChunks) {
   let lastKey = "";
 
   while (Date.now() - startedAt < 10_000) {
-    lastKey = await readElementText("benchmark-audio-current-key");
+    lastKey = stripFlutterSemanticsLabel(
+      await readElementText("benchmark-audio-current-key"),
+      "benchmark-audio-current-key"
+    );
     if (lastKey === expectedKey) {
       return;
     }
