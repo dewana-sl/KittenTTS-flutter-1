@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:kittentts_flutter/kittentts_flutter.dart';
 
 import 'web_bridge.dart';
@@ -60,6 +60,7 @@ class KittenBenchmarkPage extends StatefulWidget {
 
 class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
   final _textController = TextEditingController(text: _defaultSampleText);
+  late final Future<_BenchmarkPhonemizerData> _phonemizerDataFuture;
 
   var _status = 'Ready';
   var _running = false;
@@ -72,6 +73,7 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
   @override
   void initState() {
     super.initState();
+    _phonemizerDataFuture = _loadBenchmarkPhonemizerData();
     setBenchmarkBindings(
       start: _runBenchmark,
       reportJson: () => _reportJson,
@@ -101,6 +103,7 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
     final startedAt = DateTime.now().toUtc();
     final rows = <Map<String, Object?>>[];
     final chunks = <_AudioChunk>[];
+    final phonemizerData = await _phonemizerDataFuture;
 
     setState(() {
       _running = true;
@@ -140,7 +143,14 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
         _setStatus('Loading ${modelDisplayName(modelId)}');
         final loadStarted = Stopwatch()..start();
         tts = await KittenTTS.create(
-          config: KittenTTSConfig(model: modelId, analytics: false),
+          config: KittenTTSConfig(
+            model: modelId,
+            analytics: false,
+            phonemizer: CEPhonemizer(
+              rulesText: phonemizerData.rulesText,
+              listText: phonemizerData.listText,
+            ),
+          ),
           onProgress: (progress, [info]) {
             final percent = (progress * 100).clamp(0, 100).toStringAsFixed(0);
             _setStatus('Loading ${modelDisplayName(modelId)} $percent%');
@@ -538,6 +548,16 @@ class _TimedGeneration {
   double get duration => max(result.duration, 0.001);
 }
 
+class _BenchmarkPhonemizerData {
+  const _BenchmarkPhonemizerData({
+    required this.rulesText,
+    required this.listText,
+  });
+
+  final String rulesText;
+  final String listText;
+}
+
 class _AudioChunk {
   const _AudioChunk({
     required this.key,
@@ -548,6 +568,14 @@ class _AudioChunk {
   final String key;
   final String accessibilityId;
   final String value;
+}
+
+Future<_BenchmarkPhonemizerData> _loadBenchmarkPhonemizerData() async {
+  final results = await Future.wait([
+    rootBundle.loadString('assets/cephonemizer/en_rules'),
+    rootBundle.loadString('assets/cephonemizer/en_list'),
+  ]);
+  return _BenchmarkPhonemizerData(rulesText: results[0], listText: results[1]);
 }
 
 double _percentile(List<num> values, double percentile) {

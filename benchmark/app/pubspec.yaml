@@ -20,3 +20,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/cephonemizer/en_rules
+    - assets/cephonemizer/en_list
