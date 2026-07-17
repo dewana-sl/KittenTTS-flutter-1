@@ -7,6 +7,12 @@ const EXPECTED_MODELS = [
   "kitten-tts-micro-0.8",
   "kitten-tts-mini-0.8",
 ];
+const EXPECTED_MODEL_DISPLAY_NAMES = new Map([
+  ["kitten-tts-nano-0.8", "Nano (fp32)"],
+  ["kitten-tts-nano-0.8-int8", "Nano (int8)"],
+  ["kitten-tts-micro-0.8", "Micro"],
+  ["kitten-tts-mini-0.8", "Mini"],
+]);
 const BENCHMARK_REPORT_TIMEOUT_MS = Number(
   process.env.TESTMU_BENCHMARK_REPORT_TIMEOUT_MS || 30 * 60 * 1000
 );
@@ -40,6 +46,10 @@ function parseBenchmarkJson(rawText) {
 
 function hasFinishedBenchmark(report) {
   return Boolean(report?.finishedAt);
+}
+
+function expectedModelDisplayName(model) {
+  return EXPECTED_MODEL_DISPLAY_NAMES.get(model) || model;
 }
 
 async function readBenchmarkReport(accessibilityId) {
@@ -414,28 +424,47 @@ async function getBenchmarkReportFromUi({ includeAudio = false } = {}) {
 }
 
 function markPartialReport(report, timeoutMessage) {
+  const sourceRows = Array.isArray(report.rows) ? report.rows : [];
+  const rows = EXPECTED_MODELS.map((model) => {
+    const row =
+      sourceRows.find(
+        (candidate) => candidate.model === model || candidate.modelId === model
+      ) || null;
+
+    if (!row) {
+      return {
+        model,
+        modelId: model,
+        modelDisplayName: expectedModelDisplayName(model),
+        status: "failed",
+        failedStage: "Benchmark timeout",
+        errorSummary: `Model did not finish before the device session ended. ${timeoutMessage}`,
+      };
+    }
+
+    if (row.status !== "failed") {
+      return row;
+    }
+
+    const summary = String(row.errorSummary || "");
+    if (
+      !/did not run|did not finish|in progress|session ended/i.test(summary)
+    ) {
+      return row;
+    }
+
+    return {
+      ...row,
+      failedStage: row.failedStage || "Benchmark timeout",
+      errorSummary: `${summary} ${timeoutMessage}`.trim(),
+    };
+  });
+
   return {
     ...report,
     status: "partial",
     finishedAt: report.finishedAt || null,
-    rows: (report.rows || []).map((row) => {
-      if (row.status !== "failed") {
-        return row;
-      }
-
-      const summary = String(row.errorSummary || "");
-      if (
-        !/did not run|did not finish|in progress|session ended/i.test(summary)
-      ) {
-        return row;
-      }
-
-      return {
-        ...row,
-        failedStage: row.failedStage || "Benchmark timeout",
-        errorSummary: `${summary} ${timeoutMessage}`.trim(),
-      };
-    }),
+    rows,
   };
 }
 
@@ -704,7 +733,13 @@ describe("KittenTTS Flutter benchmark", () => {
     expect(report.schemaVersion).toBe(1);
     expect(report.sampleText.length).toBeGreaterThan(0);
     expect(report.characterLength).toBeGreaterThan(0);
-    expect(report.rows.length).toBe(EXPECTED_MODELS.length);
+    if (report.rows.length !== EXPECTED_MODELS.length) {
+      throw new Error(
+        `Benchmark report has ${report.rows.length} model rows, expected ${EXPECTED_MODELS.length}. Models: ${report.rows
+          .map((row) => row.model || row.modelId || row.modelDisplayName)
+          .join(", ")}`
+      );
+    }
 
     for (const expectedModel of EXPECTED_MODELS) {
       const row = report.rows.find(

@@ -102,7 +102,7 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
     }
 
     final startedAt = DateTime.now().toUtc();
-    final rows = <Map<String, Object?>>[];
+    final rows = allKittenTTSModelIds.map(_queuedBenchmarkRow).toList();
     final chunks = <_AudioChunk>[];
     final phonemizerData = await _phonemizerDataFuture;
 
@@ -126,17 +126,12 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
       };
     });
 
-    for (final modelId in allKittenTTSModelIds) {
+    _publishPartialReport(sampleText, startedAt, rows, chunks);
+
+    for (final entry in allKittenTTSModelIds.asMap().entries) {
+      final modelId = entry.value;
       final modelName = modelRepoId(modelId);
-      final row = <String, Object?>{
-        'model': modelName,
-        'modelId': modelId,
-        'modelDisplayName': modelDisplayName(modelId),
-        'status': 'failed',
-        'failedStage': 'Queued',
-        'errorSummary': 'Model did not run yet.',
-      };
-      rows.add(row);
+      final row = rows[entry.key];
       _publishPartialReport(sampleText, startedAt, rows, chunks);
 
       KittenTTS? tts;
@@ -284,6 +279,17 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
   void _setStatus(String status) {
     if (!mounted) return;
     setState(() => _status = status);
+  }
+
+  Map<String, Object?> _queuedBenchmarkRow(KittenTTSModelId modelId) {
+    return {
+      'model': modelRepoId(modelId),
+      'modelId': modelId,
+      'modelDisplayName': modelDisplayName(modelId),
+      'status': 'failed',
+      'failedStage': 'Queued',
+      'errorSummary': 'Model did not run yet.',
+    };
   }
 
   void _publishPartialReport(
