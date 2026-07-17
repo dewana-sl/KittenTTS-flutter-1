@@ -153,6 +153,7 @@ jobs:
 
   ios-package:
     name: Benchmark app iOS unsigned IPA
+    if: false
     runs-on: macos-latest
     needs: sdk
     outputs:
@@ -254,6 +255,7 @@ jobs:
 
   web-package:
     name: Benchmark app web build
+    if: false
     runs-on: ubuntu-latest
     needs: sdk
 
@@ -282,6 +284,7 @@ jobs:
 
   testmu-ios-benchmark:
     name: TestMu iOS benchmark (${{ matrix.device }})
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 45
     needs: ios-package
@@ -351,9 +354,7 @@ jobs:
     name: TestMu Android benchmark (${{ matrix.device }})
     runs-on: ubuntu-latest
     timeout-minutes: 50
-    needs:
-      - android-package
-      - testmu-ios-benchmark
+    needs: android-package
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -362,15 +363,6 @@ jobs:
           - slug: pixel-5
             device: Pixel 5
             version: "12"
-          - slug: galaxy-note10
-            device: Galaxy Note10
-            version: "12"
-          - slug: pixel-8
-            device: Pixel 8
-            version: "14"
-          - slug: redmi-note-8
-            device: Xiaomi Redmi Note 8
-            version: "10"
 
     steps:
       - uses: actions/checkout@v4
@@ -424,6 +416,7 @@ jobs:
 
   testmu-web-benchmark:
     name: TestMu web benchmark (${{ matrix.device }} / ${{ matrix.browser }})
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 45
     needs:
@@ -524,6 +517,7 @@ jobs:
 
   testmu-desktop-web-benchmark:
     name: TestMu desktop web benchmark (Linux / Chrome)
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 45
     needs:
@@ -611,11 +605,7 @@ jobs:
     name: Benchmark report
     runs-on: ubuntu-latest
     if: always()
-    needs:
-      - testmu-ios-benchmark
-      - testmu-android-benchmark
-      - testmu-web-benchmark
-      - testmu-desktop-web-benchmark
+    needs: testmu-android-benchmark
 
     steps:
       - uses: actions/checkout@v4

@@ -20,6 +20,14 @@ const _defaultSampleText = String.fromEnvironment(
       'This benchmark compares every model for speed, quality, and consistency.',
 );
 const _warmRunCount = int.fromEnvironment('TESTMU_WARM_RUNS', defaultValue: 5);
+const _ortNumThreads = int.fromEnvironment(
+  'TESTMU_ORT_NUM_THREADS',
+  defaultValue: 1,
+);
+const _maxTokensPerChunk = int.fromEnvironment(
+  'TESTMU_MAX_TOKENS_PER_CHUNK',
+  defaultValue: 96,
+);
 const _voice = 'bella';
 const _speed = 1.0;
 const _audioChunkSize = 64000;
@@ -120,6 +128,8 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
         'voiceDisplayName': voiceDisplayName(_voice),
         'speed': _speed,
         'warmRunCount': _warmRunCount,
+        'ortNumThreads': _ortNumThreads,
+        'maxTokensPerChunk': _maxTokensPerChunk,
         'startedAt': startedAt.toIso8601String(),
         'finishedAt': null,
         'rows': rows,
@@ -143,6 +153,8 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
           config: KittenTTSConfig(
             model: modelId,
             analytics: false,
+            ortNumThreads: _ortNumThreads,
+            maxTokensPerChunk: _maxTokensPerChunk,
             modelFiles: modelFiles,
             phonemizer: CEPhonemizer(
               rulesText: phonemizerData.rulesText,
@@ -328,6 +340,8 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
       'voiceDisplayName': voiceDisplayName(_voice),
       'speed': _speed,
       'warmRunCount': _warmRunCount,
+      'ortNumThreads': _ortNumThreads,
+      'maxTokensPerChunk': _maxTokensPerChunk,
       'startedAt': startedAt.toIso8601String(),
       'finishedAt': finishedAt?.toIso8601String(),
       'rows': rows,
