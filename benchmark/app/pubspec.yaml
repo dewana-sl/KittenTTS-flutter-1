@@ -25,4 +25,7 @@ flutter:
   assets:
     - assets/cephonemizer/en_rules
     - assets/cephonemizer/en_list
-    - assets/models/
+    - assets/models/kitten-tts-nano-0.8/
+    - assets/models/kitten-tts-nano-0.8-int8/
+    - assets/models/kitten-tts-micro-0.8/
+    - assets/models/kitten-tts-mini-0.8/
