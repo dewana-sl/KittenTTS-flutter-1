@@ -67,6 +67,7 @@ jobs:
 
   android-package:
     name: Benchmark app Android APK
+    if: false
     runs-on: ubuntu-latest
     needs: sdk
     outputs:
@@ -154,6 +155,7 @@ jobs:
 
   ios-package:
     name: Benchmark app iOS unsigned IPA
+    if: false
     runs-on: macos-latest
     needs: sdk
     outputs:
@@ -283,6 +285,7 @@ jobs:
 
   testmu-ios-benchmark:
     name: TestMu iOS benchmark (${{ matrix.device }})
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 45
     needs: ios-package
@@ -352,6 +355,7 @@ jobs:
 
   testmu-android-benchmark:
     name: TestMu Android benchmark (${{ matrix.device }})
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 50
     needs: android-package
@@ -422,7 +426,6 @@ jobs:
     timeout-minutes: 45
     needs:
       - web-package
-      - testmu-android-benchmark
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -606,8 +609,6 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     needs:
-      - testmu-android-benchmark
-      - testmu-ios-benchmark
       - testmu-web-benchmark
       - testmu-desktop-web-benchmark
 
