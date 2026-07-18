@@ -13,7 +13,7 @@ void main() {
   runApp(const KittenBenchmarkApp());
 }
 
-const _defaultSampleText = String.fromEnvironment(
+const _compiledDefaultSampleText = String.fromEnvironment(
   'TESTMU_SAMPLE_TEXT',
   defaultValue:
       'KittenTTS runs fully on your device and creates clear speech quickly.\n'
@@ -46,8 +46,10 @@ const _speed = 1.0;
 const _audioChunkSize = 64000;
 final _benchmarkModelIds = _resolveBenchmarkModelIds();
 final _benchmarkWarmRunCount = _resolveWarmRunCount();
+final _defaultSampleText =
+    Uri.base.queryParameters['benchmarkText'] ?? _compiledDefaultSampleText;
 final _lowSpecBenchmarkModelIds = _resolveBenchmarkModelIds(
-  _lowSpecModelIdsCsv.isEmpty ? _modelIdsCsv : _lowSpecModelIdsCsv,
+  _lowSpecModelIdsCsv.isEmpty ? 'nano-int8,nano,micro' : _lowSpecModelIdsCsv,
 );
 final _lowSpecBenchmarkWarmRunCount = max(1, _lowSpecWarmRunCount);
 final _exposeDirectAudioChunks = _audioSemanticsMode != 'pager';
