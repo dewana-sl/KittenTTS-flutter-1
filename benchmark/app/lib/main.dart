@@ -32,11 +32,16 @@ const _maxTokensPerChunk = int.fromEnvironment(
   defaultValue: 96,
 );
 const _modelIdsCsv = String.fromEnvironment('TESTMU_MODEL_IDS');
+const _audioSemanticsMode = String.fromEnvironment(
+  'TESTMU_AUDIO_SEMANTICS_MODE',
+  defaultValue: 'direct-and-pager',
+);
 const _voice = 'bella';
 const _speed = 1.0;
 const _audioChunkSize = 64000;
 final _benchmarkModelIds = _resolveBenchmarkModelIds();
 final _warmRunCount = _resolveWarmRunCount();
+final _exposeDirectAudioChunks = _audioSemanticsMode != 'pager';
 const List<OrtProvider>? _benchmarkOrtProviders = null;
 
 const _background = Color(0xFFF8FAFC);
@@ -126,6 +131,8 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
       _status = 'Loading phonemizer data';
       _errorMessage = null;
       _reportJson = '';
+      _audioChunks = const [];
+      _audioPagerIndex = 0;
     });
     _publishPartialReport(sampleText, startedAt, rows, chunks);
     await Future<void>.delayed(const Duration(milliseconds: 250));
@@ -301,7 +308,7 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
           : 'Benchmark finished';
       _report = finalReport;
       _reportJson = const JsonEncoder.withIndent('  ').convert(finalReport);
-      _audioChunks = chunks;
+      _audioChunks = List.unmodifiable(chunks);
       _audioPagerIndex = 0;
     });
   }
@@ -372,7 +379,6 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
     setState(() {
       _report = report;
       _reportJson = const JsonEncoder.withIndent('  ').convert(report);
-      _audioChunks = List.unmodifiable(chunks);
     });
   }
 
@@ -451,13 +457,14 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
               value: _reportJson.isEmpty ? '{}' : _reportJson,
               child: const SizedBox(height: 1, width: 1),
             ),
-            ..._audioChunks.map(
-              (chunk) => Semantics(
-                label: chunk.accessibilityId,
-                value: chunk.value,
-                child: const SizedBox(height: 1, width: 1),
+            if (_exposeDirectAudioChunks)
+              ..._audioChunks.map(
+                (chunk) => Semantics(
+                  label: chunk.accessibilityId,
+                  value: chunk.value,
+                  child: const SizedBox(height: 1, width: 1),
+                ),
               ),
-            ),
             const Text(
               'KittenTTS Flutter Benchmark',
               style: TextStyle(
