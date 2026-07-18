@@ -375,9 +375,18 @@ jobs:
       max-parallel: 1
       matrix:
         include:
+          - slug: pixel-5
+            device: Pixel 5
+            version: "12"
+          - slug: galaxy-note10
+            device: Galaxy Note10
+            version: "12"
           - slug: pixel-8
             device: Pixel 8
             version: "14"
+          - slug: xiaomi-redmi-note-8
+            device: Xiaomi Redmi Note 8
+            version: "10"
 
     steps:
       - uses: actions/checkout@v4
