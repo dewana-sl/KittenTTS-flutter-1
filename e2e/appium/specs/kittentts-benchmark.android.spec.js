@@ -754,6 +754,18 @@ async function getPageSourceSummary() {
   }
 }
 
+async function findBenchmarkRunButton() {
+  const automationId =
+    process.env.TESTMU_LOW_SPEC_MODE === "true"
+      ? "benchmark-low-spec-button"
+      : "benchmark-button";
+  const button = await findElementByAutomationId(automationId);
+  if (!button) {
+    throw new Error(`Missing benchmark run button: ${automationId}`);
+  }
+  return button;
+}
+
 async function collectAndroidFailureContext() {
   if (!isAndroidSession()) {
     return "";
@@ -883,6 +895,7 @@ describe("KittenTTS Flutter benchmark", () => {
   it("benchmarks every bundled model and writes a device report", async () => {
     const deviceStartedAtMs = Date.now();
     let benchmark = await waitForAppReady(APP_READY_TIMEOUT_MS);
+    benchmark = await findBenchmarkRunButton();
 
     const sampleText = process.env.TESTMU_SAMPLE_TEXT;
     if (sampleText) {
@@ -901,9 +914,7 @@ describe("KittenTTS Flutter benchmark", () => {
           );
         }
         await dismissKeyboardIfNeeded();
-        benchmark =
-          (await findElementByAutomationId("benchmark-button")) ||
-          (await waitForAppReady(60_000));
+        benchmark = await findBenchmarkRunButton();
       } else {
         console.log(
           `[KittenTTS benchmark] Using app sample text; Appium reported "${currentText || "<empty>"}".`

@@ -32,6 +32,11 @@ const _maxTokensPerChunk = int.fromEnvironment(
   defaultValue: 96,
 );
 const _modelIdsCsv = String.fromEnvironment('TESTMU_MODEL_IDS');
+const _lowSpecModelIdsCsv = String.fromEnvironment('TESTMU_LOW_SPEC_MODEL_IDS');
+const _lowSpecWarmRunCount = int.fromEnvironment(
+  'TESTMU_LOW_SPEC_WARM_RUNS',
+  defaultValue: 1,
+);
 const _audioSemanticsMode = String.fromEnvironment(
   'TESTMU_AUDIO_SEMANTICS_MODE',
   defaultValue: 'direct-and-pager',
@@ -40,7 +45,11 @@ const _voice = 'bella';
 const _speed = 1.0;
 const _audioChunkSize = 64000;
 final _benchmarkModelIds = _resolveBenchmarkModelIds();
-final _warmRunCount = _resolveWarmRunCount();
+final _benchmarkWarmRunCount = _resolveWarmRunCount();
+final _lowSpecBenchmarkModelIds = _resolveBenchmarkModelIds(
+  _lowSpecModelIdsCsv.isEmpty ? _modelIdsCsv : _lowSpecModelIdsCsv,
+);
+final _lowSpecBenchmarkWarmRunCount = max(1, _lowSpecWarmRunCount);
 final _exposeDirectAudioChunks = _audioSemanticsMode != 'pager';
 const List<OrtProvider>? _benchmarkOrtProviders = null;
 
@@ -96,7 +105,7 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
     super.initState();
     _phonemizerDataFuture = _loadBenchmarkPhonemizerData();
     setBenchmarkBindings(
-      start: _runBenchmark,
+      start: () => _runBenchmark(),
       reportJson: () => _reportJson,
       audioChunksJson: _audioChunksJson,
       error: () => _errorMessage,
@@ -113,9 +122,14 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
     super.dispose();
   }
 
-  Future<void> _runBenchmark() async {
+  Future<void> _runBenchmark({
+    List<KittenTTSModelId>? modelIds,
+    int? warmRunCount,
+  }) async {
     if (_running) return;
 
+    final benchmarkModelIds = modelIds ?? _benchmarkModelIds;
+    final benchmarkWarmRunCount = warmRunCount ?? _benchmarkWarmRunCount;
     final sampleText = _textController.text.trim();
     if (sampleText.isEmpty) {
       setState(() => _errorMessage = 'Sample text is empty.');
@@ -123,7 +137,7 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
     }
 
     final startedAt = DateTime.now().toUtc();
-    final rows = _benchmarkModelIds.map(_queuedBenchmarkRow).toList();
+    final rows = benchmarkModelIds.map(_queuedBenchmarkRow).toList();
     final chunks = <_AudioChunk>[];
 
     setState(() {
@@ -134,18 +148,36 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
       _audioChunks = const [];
       _audioPagerIndex = 0;
     });
-    _publishPartialReport(sampleText, startedAt, rows, chunks);
+    _publishPartialReport(
+      sampleText,
+      startedAt,
+      rows,
+      chunks,
+      benchmarkWarmRunCount,
+    );
     await Future<void>.delayed(const Duration(milliseconds: 250));
 
     final phonemizerData = await _phonemizerDataFuture;
     _setStatus('Starting benchmark');
-    _publishPartialReport(sampleText, startedAt, rows, chunks);
+    _publishPartialReport(
+      sampleText,
+      startedAt,
+      rows,
+      chunks,
+      benchmarkWarmRunCount,
+    );
 
-    for (final entry in _benchmarkModelIds.asMap().entries) {
+    for (final entry in benchmarkModelIds.asMap().entries) {
       final modelId = entry.value;
       final modelName = modelRepoId(modelId);
       final row = rows[entry.key];
-      _publishPartialReport(sampleText, startedAt, rows, chunks);
+      _publishPartialReport(
+        sampleText,
+        startedAt,
+        rows,
+        chunks,
+        benchmarkWarmRunCount,
+      );
 
       KittenTTS? tts;
       try {
@@ -157,6 +189,7 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
           row,
           modelId,
           'Copying ${modelDisplayName(modelId)} assets',
+          benchmarkWarmRunCount,
         );
         final modelFiles = await resolveBenchmarkModelFiles(modelId);
         await _markRowRunning(
@@ -167,6 +200,7 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
           row,
           modelId,
           'Loading ${modelDisplayName(modelId)}',
+          benchmarkWarmRunCount,
         );
         final loadStarted = Stopwatch()..start();
         tts = await KittenTTS.create(
@@ -197,11 +231,12 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
           row,
           modelId,
           'Cold run ${modelDisplayName(modelId)}',
+          benchmarkWarmRunCount,
         );
         final first = await _timedGenerate(tts, sampleText);
         final warm = <_TimedGeneration>[];
 
-        for (var index = 0; index < _warmRunCount; index += 1) {
+        for (var index = 0; index < benchmarkWarmRunCount; index += 1) {
           await _markRowRunning(
             sampleText,
             startedAt,
@@ -209,7 +244,8 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
             chunks,
             row,
             modelId,
-            'Warm run ${index + 1}/$_warmRunCount ${modelDisplayName(modelId)}',
+            'Warm run ${index + 1}/$benchmarkWarmRunCount ${modelDisplayName(modelId)}',
+            benchmarkWarmRunCount,
           );
           warm.add(await _timedGenerate(tts, sampleText));
         }
@@ -243,7 +279,7 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
             'firstGenerationSeconds': _round(first.generationMs / 1000),
             'generationMs': best.generationMs,
             'generationSeconds': _round(best.generationMs / 1000),
-            'warmRunCount': _warmRunCount,
+            'warmRunCount': benchmarkWarmRunCount,
             'warmGenerationMs': warmMs,
             'warmGenerationSeconds': warmSeconds,
             'warmP50GenerationMs': _percentile(warmMs, 0.50).round(),
@@ -287,7 +323,13 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
           });
       } finally {
         await tts?.dispose();
-        _publishPartialReport(sampleText, startedAt, rows, chunks);
+        _publishPartialReport(
+          sampleText,
+          startedAt,
+          rows,
+          chunks,
+          benchmarkWarmRunCount,
+        );
       }
     }
 
@@ -299,6 +341,7 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
       finishedAt: finishedAt,
       status: failed ? 'partial' : 'passed',
       rows: rows,
+      warmRunCount: benchmarkWarmRunCount,
     );
 
     setState(() {
@@ -336,6 +379,7 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
     Map<String, Object?> row,
     KittenTTSModelId modelId,
     String stage,
+    int warmRunCount,
   ) async {
     row
       ..clear()
@@ -348,7 +392,7 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
         'errorSummary': 'Model is still running at this stage.',
       });
     _setStatus(stage);
-    _publishPartialReport(sampleText, startedAt, rows, chunks);
+    _publishPartialReport(sampleText, startedAt, rows, chunks, warmRunCount);
     await Future<void>.delayed(const Duration(milliseconds: 250));
   }
 
@@ -368,6 +412,7 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
     DateTime startedAt,
     List<Map<String, Object?>> rows,
     List<_AudioChunk> chunks,
+    int warmRunCount,
   ) {
     if (!mounted) return;
     final report = _buildReport(
@@ -375,6 +420,7 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
       startedAt: startedAt,
       status: 'running',
       rows: rows,
+      warmRunCount: warmRunCount,
     );
     setState(() {
       _report = report;
@@ -387,6 +433,7 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
     required DateTime startedAt,
     required String status,
     required List<Map<String, Object?>> rows,
+    required int warmRunCount,
     DateTime? finishedAt,
   }) {
     return {
@@ -397,7 +444,7 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
       'voice': _voice,
       'voiceDisplayName': voiceDisplayName(_voice),
       'speed': _speed,
-      'warmRunCount': _warmRunCount,
+      'warmRunCount': warmRunCount,
       'ortNumThreads': _ortNumThreads,
       'ortProviders': _benchmarkOrtProviderNames(),
       'maxTokensPerChunk': _maxTokensPerChunk,
@@ -506,8 +553,27 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
               button: true,
               enabled: !_running,
               child: FilledButton(
-                onPressed: _running ? null : _runBenchmark,
+                onPressed: _running ? null : () => _runBenchmark(),
                 child: Text(_running ? 'Running benchmark' : 'Run benchmark'),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Semantics(
+              label: 'benchmark-low-spec-button',
+              button: true,
+              enabled: !_running,
+              child: OutlinedButton(
+                onPressed: _running
+                    ? null
+                    : () => _runBenchmark(
+                        modelIds: _lowSpecBenchmarkModelIds,
+                        warmRunCount: _lowSpecBenchmarkWarmRunCount,
+                      ),
+                child: Text(
+                  _running
+                      ? 'Running low-spec benchmark'
+                      : 'Run low-spec benchmark',
+                ),
               ),
             ),
             const SizedBox(height: 12),
@@ -701,12 +767,13 @@ String _hashBytes(Uint8List bytes) {
   return hash.toRadixString(16).padLeft(8, '0').substring(0, 8);
 }
 
-List<KittenTTSModelId> _resolveBenchmarkModelIds() {
-  final modelIdsCsv =
+List<KittenTTSModelId> _resolveBenchmarkModelIds([String? modelIdsCsv]) {
+  final resolvedModelIdsCsv =
+      modelIdsCsv ??
       Uri.base.queryParameters['benchmarkModelIds'] ??
       Uri.base.queryParameters['benchmarkModels'] ??
       _modelIdsCsv;
-  final requested = modelIdsCsv
+  final requested = resolvedModelIdsCsv
       .split(',')
       .map((value) => value.trim())
       .where((value) => value.isNotEmpty)

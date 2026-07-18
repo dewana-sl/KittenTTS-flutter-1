@@ -379,18 +379,26 @@ jobs:
             device: Pixel 5
             version: "12"
             audio_mode: direct
+            warm_runs: "5"
+            low_spec: "false"
           - slug: galaxy-note10
             device: Galaxy Note10
             version: "12"
             audio_mode: direct
+            warm_runs: "5"
+            low_spec: "false"
           - slug: pixel-8
             device: Pixel 8
             version: "14"
             audio_mode: direct
+            warm_runs: "5"
+            low_spec: "false"
           - slug: xiaomi-redmi-note-8
             device: Xiaomi Redmi Note 8
             version: "10"
             audio_mode: pager
+            warm_runs: "1"
+            low_spec: "true"
 
     steps:
       - uses: actions/checkout@v4
@@ -418,6 +426,8 @@ jobs:
           TESTMU_REQUIRE_WER_AUDIO: "true"
           TESTMU_AUDIO_EXTRACTION_MODE: ${{ matrix.audio_mode }}
           TESTMU_EXPECTED_MODELS: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
+          TESTMU_EXPECTED_WARM_RUNS: ${{ matrix.warm_runs }}
+          TESTMU_LOW_SPEC_MODE: ${{ matrix.low_spec }}
           TESTMU_BENCHMARK_REPORT_TIMEOUT_MS: 2400000
           GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -449,9 +459,7 @@ jobs:
     name: TestMu web benchmark (${{ matrix.device }} / ${{ matrix.browser }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    needs:
-      - web-package
-      - testmu-android-benchmark
+    needs: web-package
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -551,9 +559,7 @@ jobs:
     name: TestMu desktop web benchmark (Linux / Chrome)
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    needs:
-      - web-package
-      - testmu-web-benchmark
+    needs: web-package
 
     steps:
       - uses: actions/checkout@v4
