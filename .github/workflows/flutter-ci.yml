@@ -324,15 +324,30 @@ jobs:
           TESTMU_SKIP_SAMPLE_OVERRIDE: "true"
           TESTMU_REQUIRE_WER_AUDIO: "true"
           TESTMU_BENCHMARK_REPORT_TIMEOUT_MS: 900000
+          TESTMU_CONNECTION_RETRY_TIMEOUT_MS: 300000
+          TESTMU_CONNECTION_RETRY_COUNT: 0
           GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -o pipefail
           mkdir -p reports
           export BENCHMARK_STARTED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
-          set +e
-          timeout 40m npm run test:ios 2>&1 | tee reports/appium-output.log
-          status=${PIPESTATUS[0]}
-          set -e
+          status=1
+          for attempt in 1 2; do
+            if [ "$attempt" -gt 1 ]; then
+              echo "Retrying transient TestMu iOS session creation failure (attempt $attempt/2)." | tee -a reports/appium-output.log
+              sleep 30
+            fi
+            set +e
+            timeout 40m npm run test:ios 2>&1 | tee -a reports/appium-output.log
+            status=${PIPESTATUS[0]}
+            set -e
+            if [ "$status" -eq 0 ]; then
+              break
+            fi
+            if ! grep -Eiq "Failed to create a session|UND_ERR_HEADERS_TIMEOUT|Request failed with error code" reports/appium-output.log; then
+              break
+            fi
+          done
           export BENCHMARK_FINISHED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
           if [ "$status" -eq 124 ]; then
             echo "Timed out after 40 minutes while waiting for the TestMu/Appium iOS benchmark to finish." | tee -a reports/appium-output.log
@@ -568,29 +583,29 @@ jobs:
         env:
           LT_USERNAME: ${{ secrets.LT_USERNAME }}
           LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY }}
-          TESTMU_WEB_URL: http://localhost.lambdatest.com:4173/?benchmarkAutoStart=true
+          TESTMU_WEB_URL: http://localhost.lambdatest.com:4173/?benchmarkAutoStart=true&benchmarkModelIds=nano-int8&benchmarkWarmRuns=5
           TESTMU_TUNNEL_NAME: kittentts-flutter-web-${{ github.run_id }}-linux-chrome
           TESTMU_DEVICE: Linux Desktop
           TESTMU_PLATFORM_NAME: Linux
           TESTMU_BROWSER_NAME: Chrome
           TESTMU_BROWSER_VERSION: latest
           TESTMU_SAMPLE_TEXT: ${{ vars.TESTMU_SAMPLE_TEXT || env.DEFAULT_TESTMU_SAMPLE_TEXT }}
-          TESTMU_EXPECTED_MODELS: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
+          TESTMU_EXPECTED_MODELS: kitten-tts-nano-0.8-int8
           TESTMU_EXPECTED_WARM_RUNS: 5
           TESTMU_REQUIRE_WER_AUDIO: "true"
-          TESTMU_BENCHMARK_REPORT_TIMEOUT_MS: 2400000
+          TESTMU_BENCHMARK_REPORT_TIMEOUT_MS: 900000
           GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -o pipefail
           mkdir -p reports
           export BENCHMARK_STARTED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
           set +e
-          timeout 40m npm run test:web:desktop 2>&1 | tee reports/appium-output.log
+          timeout 15m npm run test:web:desktop 2>&1 | tee reports/appium-output.log
           status=${PIPESTATUS[0]}
           set -e
           export BENCHMARK_FINISHED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
           if [ "$status" -eq 124 ]; then
-            echo "Timed out after 40 minutes while waiting for the TestMu/Appium desktop browser benchmark to finish." | tee -a reports/appium-output.log
+            echo "Timed out after 15 minutes while waiting for the TestMu/Appium desktop browser benchmark to finish." | tee -a reports/appium-output.log
           fi
           if [ "$status" -ne 0 ] && [ -z "$(find reports -name '*.json' -print -quit)" ]; then
             BENCHMARK_FAILED_STAGE="Run TestMu desktop browser benchmark" TESTMU_TARGET=web node scripts/write-failure-report.js

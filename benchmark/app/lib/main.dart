@@ -19,7 +19,10 @@ const _defaultSampleText = String.fromEnvironment(
       'KittenTTS runs fully on your device and creates clear speech quickly.\n'
       'This benchmark compares every model for speed, quality, and consistency.',
 );
-const _warmRunCount = int.fromEnvironment('TESTMU_WARM_RUNS', defaultValue: 5);
+const _defaultWarmRunCount = int.fromEnvironment(
+  'TESTMU_WARM_RUNS',
+  defaultValue: 5,
+);
 const _ortNumThreads = int.fromEnvironment(
   'TESTMU_ORT_NUM_THREADS',
   defaultValue: 1,
@@ -33,6 +36,7 @@ const _voice = 'bella';
 const _speed = 1.0;
 const _audioChunkSize = 64000;
 final _benchmarkModelIds = _resolveBenchmarkModelIds();
+final _warmRunCount = _resolveWarmRunCount();
 const List<OrtProvider>? _benchmarkOrtProviders = null;
 
 const _background = Color(0xFFF8FAFC);
@@ -686,13 +690,25 @@ String _hashBytes(Uint8List bytes) {
 }
 
 List<KittenTTSModelId> _resolveBenchmarkModelIds() {
-  final requested = _modelIdsCsv
+  final modelIdsCsv =
+      Uri.base.queryParameters['benchmarkModelIds'] ??
+      Uri.base.queryParameters['benchmarkModels'] ??
+      _modelIdsCsv;
+  final requested = modelIdsCsv
       .split(',')
       .map((value) => value.trim())
       .where((value) => value.isNotEmpty)
       .toList(growable: false);
   if (requested.isEmpty) return allKittenTTSModelIds;
   return requested.map(validateModel).toList(growable: false);
+}
+
+int _resolveWarmRunCount() {
+  final override = int.tryParse(
+    Uri.base.queryParameters['benchmarkWarmRuns'] ?? '',
+  );
+  if (override != null && override > 0) return override;
+  return _defaultWarmRunCount;
 }
 
 String _slugify(String value) {
