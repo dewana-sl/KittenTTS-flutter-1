@@ -17,6 +17,7 @@ function findErrorSummary(logText) {
   const priorityPatterns = [
     /Timed out after \d+ minutes/i,
     /Timed out waiting/i,
+    /^(?:\[[^\]]+\]\s*)?Error:\s*(?!Timeout)/i,
     /Error in "/i,
     /^Error:\s*Timeout/i,
   ];

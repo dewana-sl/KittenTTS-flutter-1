@@ -441,6 +441,11 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
     return '${message.substring(0, 500)}...';
   }
 
+  void _advanceAudioPager() {
+    if (_audioPagerIndex >= _audioChunks.length - 1) return;
+    setState(() => _audioPagerIndex += 1);
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentChunk = _audioChunks.isEmpty
@@ -543,10 +548,9 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
                     label: 'benchmark-audio-next',
                     button: true,
                     enabled: hasNextChunk,
+                    onTap: hasNextChunk ? _advanceAudioPager : null,
                     child: OutlinedButton(
-                      onPressed: hasNextChunk
-                          ? () => setState(() => _audioPagerIndex += 1)
-                          : null,
+                      onPressed: hasNextChunk ? _advanceAudioPager : null,
                       child: const Text('Next'),
                     ),
                   ),

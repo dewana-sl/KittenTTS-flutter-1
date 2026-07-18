@@ -502,6 +502,14 @@ async function attachWerAudioChunksFromPager(report) {
 }
 
 async function findAudioPagerNextButton() {
+  const automationButton = await findElementByAutomationId("benchmark-audio-next");
+  if (
+    automationButton &&
+    (await automationButton.isEnabled().catch(() => true))
+  ) {
+    return automationButton;
+  }
+
   if (isAndroidSession()) {
     const visibleNext = await findDisplayedElement([
       'android=new UiSelector().text("Next")',
