@@ -524,19 +524,21 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
               ),
             ],
             const SizedBox(height: 18),
-            _ResultSummary(report: _report),
-            const SizedBox(height: 18),
             if (currentChunk != null) ...[
+              Semantics(
+                label: 'benchmark-audio-current-key:${currentChunk.key}',
+                child: const SizedBox(height: 1, width: 1),
+              ),
+              Semantics(
+                label: 'benchmark-audio-current:${currentChunk.value}',
+                child: const SizedBox(height: 1, width: 1),
+              ),
               Row(
                 children: [
                   Expanded(
-                    child: Semantics(
-                      label: 'benchmark-audio-current-key',
-                      value: currentChunk.key,
-                      child: Text(
-                        'Audio chunk ${_audioPagerIndex + 1}/${_audioChunks.length}',
-                        style: const TextStyle(color: _muted),
-                      ),
+                    child: Text(
+                      'Audio chunk ${_audioPagerIndex + 1}/${_audioChunks.length}',
+                      style: const TextStyle(color: _muted),
                     ),
                   ),
                   Semantics(
@@ -552,12 +554,9 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
                   ),
                 ],
               ),
-              Semantics(
-                label: 'benchmark-audio-current',
-                value: currentChunk.value,
-                child: const SizedBox(height: 1, width: 1),
-              ),
+              const SizedBox(height: 18),
             ],
+            _ResultSummary(report: _report),
             const SizedBox(height: 18),
             Semantics(
               label: 'benchmark-json-visible',

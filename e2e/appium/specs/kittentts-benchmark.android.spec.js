@@ -121,13 +121,16 @@ function regexEscape(value) {
 }
 
 function androidSemanticsLabelRegex(accessibilityId) {
-  return `(?s)(^|.*, )${regexEscape(accessibilityId)}($|\\n.*)`;
+  return `(?s)(^|.*, )${regexEscape(accessibilityId)}($|[,\\n].*)`;
 }
 
 function automationSelectors(accessibilityId) {
   const selectors = [`~${accessibilityId}`];
   if (isAndroidSession()) {
     selectors.push(
+      `android=new UiSelector().descriptionStartsWith("${androidUiSelectorText(
+        `${accessibilityId}:`
+      )}")`,
       `android=new UiSelector().descriptionMatches("${androidUiSelectorText(
         androidSemanticsLabelRegex(accessibilityId)
       )}")`
@@ -239,6 +242,18 @@ function usableElementText(candidate, accessibilityId) {
 
 function stripFlutterSemanticsLabel(value, accessibilityId) {
   let text = String(value || "");
+  const prefix = `${accessibilityId}:`;
+  if (text.startsWith(prefix)) {
+    text = text.slice(prefix.length);
+  }
+  const newlinePrefix = `${accessibilityId}\n`;
+  if (text.startsWith(newlinePrefix)) {
+    text = text.slice(newlinePrefix.length);
+  }
+  const commaPrefix = `${accessibilityId}, `;
+  if (text.startsWith(commaPrefix)) {
+    text = text.slice(commaPrefix.length);
+  }
   const marker = `, ${accessibilityId}`;
   const markerIndex = text.indexOf(marker);
   if (markerIndex >= 0) {
