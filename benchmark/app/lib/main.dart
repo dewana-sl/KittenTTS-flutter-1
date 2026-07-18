@@ -446,6 +446,8 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
     final currentChunk = _audioChunks.isEmpty
         ? null
         : _audioChunks[_audioPagerIndex.clamp(0, _audioChunks.length - 1)];
+    final hasNextChunk =
+        currentChunk != null && _audioPagerIndex < _audioChunks.length - 1;
 
     return Scaffold(
       body: SafeArea(
@@ -530,6 +532,16 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
                 child: const SizedBox(height: 1, width: 1),
               ),
               Semantics(
+                label:
+                    'benchmark-audio-next:${hasNextChunk ? 'enabled' : 'disabled'}',
+                button: true,
+                enabled: hasNextChunk,
+                onTap: hasNextChunk
+                    ? () => setState(() => _audioPagerIndex += 1)
+                    : null,
+                child: const SizedBox(height: 44, width: double.infinity),
+              ),
+              Semantics(
                 label: 'benchmark-audio-current:${currentChunk.value}',
                 child: const SizedBox(height: 1, width: 1),
               ),
@@ -541,16 +553,11 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
                       style: const TextStyle(color: _muted),
                     ),
                   ),
-                  Semantics(
-                    label: 'benchmark-audio-next',
-                    button: true,
-                    enabled: _audioPagerIndex < _audioChunks.length - 1,
-                    child: OutlinedButton(
-                      onPressed: _audioPagerIndex < _audioChunks.length - 1
-                          ? () => setState(() => _audioPagerIndex += 1)
-                          : null,
-                      child: const Text('Next'),
-                    ),
+                  OutlinedButton(
+                    onPressed: hasNextChunk
+                        ? () => setState(() => _audioPagerIndex += 1)
+                        : null,
+                    child: const Text('Next'),
                   ),
                 ],
               ),
