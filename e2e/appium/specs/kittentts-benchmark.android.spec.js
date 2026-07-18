@@ -464,7 +464,7 @@ async function attachWerAudioChunksFromPager(report) {
     chunksByModel.get(expected.row.model).push(chunk);
 
     if (globalIndex < expectedChunks.length - 1) {
-      const nextButton = await findElementByAutomationId("benchmark-audio-next");
+      const nextButton = await findAudioPagerNextButton();
       if (!nextButton) {
         throw new Error("Missing WER audio pager next button.");
       }
@@ -499,6 +499,20 @@ async function attachWerAudioChunksFromPager(report) {
     ...report,
     rows,
   };
+}
+
+async function findAudioPagerNextButton() {
+  if (isAndroidSession()) {
+    const visibleNext = await findDisplayedElement([
+      'android=new UiSelector().text("Next")',
+      'android=new UiSelector().descriptionContains("Next")',
+    ]);
+    if (visibleNext) {
+      return visibleNext;
+    }
+  }
+
+  return findElementByAutomationId("benchmark-audio-next");
 }
 
 async function waitForAudioPagerKey(expectedKey, globalIndex, totalChunks) {

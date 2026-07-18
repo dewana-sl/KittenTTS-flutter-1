@@ -531,20 +531,6 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
                 label: 'benchmark-audio-current-key:${currentChunk.key}',
                 child: const SizedBox(height: 1, width: 1),
               ),
-              Semantics(
-                label:
-                    'benchmark-audio-next:${hasNextChunk ? 'enabled' : 'disabled'}',
-                button: true,
-                enabled: hasNextChunk,
-                onTap: hasNextChunk
-                    ? () => setState(() => _audioPagerIndex += 1)
-                    : null,
-                child: const SizedBox(height: 44, width: double.infinity),
-              ),
-              Semantics(
-                label: 'benchmark-audio-current:${currentChunk.value}',
-                child: const SizedBox(height: 1, width: 1),
-              ),
               Row(
                 children: [
                   Expanded(
@@ -553,13 +539,22 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
                       style: const TextStyle(color: _muted),
                     ),
                   ),
-                  OutlinedButton(
-                    onPressed: hasNextChunk
-                        ? () => setState(() => _audioPagerIndex += 1)
-                        : null,
-                    child: const Text('Next'),
+                  Semantics(
+                    label: 'benchmark-audio-next',
+                    button: true,
+                    enabled: hasNextChunk,
+                    child: OutlinedButton(
+                      onPressed: hasNextChunk
+                          ? () => setState(() => _audioPagerIndex += 1)
+                          : null,
+                      child: const Text('Next'),
+                    ),
                   ),
                 ],
+              ),
+              Semantics(
+                label: 'benchmark-audio-current:${currentChunk.value}',
+                child: const SizedBox(height: 1, width: 1),
               ),
               const SizedBox(height: 18),
             ],
