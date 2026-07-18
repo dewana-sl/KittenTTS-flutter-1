@@ -116,12 +116,20 @@ function androidUiSelectorText(value) {
   return String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
+function regexEscape(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function androidSemanticsLabelRegex(accessibilityId) {
+  return `(?s)(^|.*, )${regexEscape(accessibilityId)}($|\\n.*)`;
+}
+
 function automationSelectors(accessibilityId) {
   const selectors = [`~${accessibilityId}`];
   if (isAndroidSession()) {
     selectors.push(
-      `android=new UiSelector().descriptionContains("${androidUiSelectorText(
-        accessibilityId
+      `android=new UiSelector().descriptionMatches("${androidUiSelectorText(
+        androidSemanticsLabelRegex(accessibilityId)
       )}")`
     );
   }
