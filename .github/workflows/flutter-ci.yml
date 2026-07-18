@@ -152,6 +152,94 @@ jobs:
           )"
           echo "app_url=$app_url" >> "$GITHUB_OUTPUT"
 
+  android-package-pager:
+    name: Benchmark app Android APK (pager audio)
+    runs-on: ubuntu-latest
+    needs: android-package
+    outputs:
+      app_url: ${{ steps.upload-android-pager-app.outputs.app_url }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Build release APK with pager audio semantics
+        run: |
+          set -euo pipefail
+          bash tool/download_benchmark_models.sh
+          flutter pub get
+          flutter build apk --release \
+            --dart-define=TESTMU_MODEL_IDS=nano-int8,nano,micro,mini \
+            --dart-define=TESTMU_AUDIO_SEMANTICS_MODE=pager
+          test -f build/app/outputs/flutter-apk/app-release.apk
+        working-directory: benchmark/app
+
+      - name: Upload pager APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-flutter-apk-pager
+          path: benchmark/app/build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Prune old TestMu Android pager uploads
+        env:
+          LT_USERNAME: ${{ secrets.LT_USERNAME }}
+          LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$LT_USERNAME" ] || [ -z "$LT_ACCESS_KEY" ]; then
+            echo "LT_USERNAME or LT_ACCESS_KEY is missing."
+            exit 1
+          fi
+
+          response="$(curl -sS -u "$LT_USERNAME:$LT_ACCESS_KEY" \
+            --location --request GET "https://manual-api.lambdatest.com/app/data?type=android&level=user")"
+          app_ids="$(APP_DATA="$response" node - <<'NODE'
+          const response = JSON.parse(process.env.APP_DATA || "{}");
+          const apps = Array.isArray(response.data) ? response.data : [];
+          const ids = apps
+            .filter((app) => String(app.name || "").startsWith("KittenTTS_Flutter_Android_PAGER_"))
+            .map((app) => app.app_id || app.appId || app.id)
+            .filter(Boolean);
+          process.stdout.write(ids.join(","));
+          NODE
+          )"
+
+          if [ -n "$app_ids" ]; then
+            curl -sS -u "$LT_USERNAME:$LT_ACCESS_KEY" \
+              --location --request DELETE "https://manual-api.lambdatest.com/app/delete" \
+              --header "Content-Type: application/json" \
+              --data-raw "{\"appIds\":\"$app_ids\"}"
+            echo
+          else
+            echo "No old TestMu Flutter Android pager uploads to prune."
+          fi
+
+      - id: upload-android-pager-app
+        name: Upload pager APK to TestMu
+        env:
+          LT_USERNAME: ${{ secrets.LT_USERNAME }}
+          LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          response="$(curl -sS -u "$LT_USERNAME:$LT_ACCESS_KEY" \
+            --location --request POST "https://manual-api.lambdatest.com/app/upload/realDevice" \
+            --form "name=KittenTTS_Flutter_Android_PAGER_${GITHUB_RUN_ID}" \
+            --form "appFile=@benchmark/app/build/app/outputs/flutter-apk/app-release.apk")"
+          app_url="$(UPLOAD_RESPONSE="$response" node - <<'NODE'
+          const response = JSON.parse(process.env.UPLOAD_RESPONSE || "{}");
+          const appUrl = response.app_url || response.appUrl || response.app || response.url;
+          if (!appUrl || !String(appUrl).startsWith("lt://")) {
+            throw new Error(`Unable to find lt:// app URL in response: ${JSON.stringify(response)}`);
+          }
+          process.stdout.write(appUrl);
+          NODE
+          )"
+          echo "app_url=$app_url" >> "$GITHUB_OUTPUT"
+
   ios-package:
     name: Benchmark app iOS unsigned IPA
     runs-on: macos-latest
@@ -369,7 +457,9 @@ jobs:
     name: TestMu Android benchmark (${{ matrix.device }})
     runs-on: ubuntu-latest
     timeout-minutes: 50
-    needs: android-package
+    needs:
+      - android-package
+      - android-package-pager
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -378,15 +468,23 @@ jobs:
           - slug: pixel-5
             device: Pixel 5
             version: "12"
+            audio_mode: direct
+            app_url: standard
           - slug: galaxy-note10
             device: Galaxy Note10
             version: "12"
+            audio_mode: direct
+            app_url: standard
           - slug: pixel-8
             device: Pixel 8
             version: "14"
+            audio_mode: direct
+            app_url: standard
           - slug: xiaomi-redmi-note-8
             device: Xiaomi Redmi Note 8
             version: "10"
+            audio_mode: pager
+            app_url: pager
 
     steps:
       - uses: actions/checkout@v4
@@ -403,7 +501,7 @@ jobs:
         env:
           LT_USERNAME: ${{ secrets.LT_USERNAME }}
           LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY }}
-          TESTMU_APP_URL: ${{ needs.android-package.outputs.app_url }}
+          TESTMU_APP_URL: ${{ matrix.app_url == 'pager' && needs.android-package-pager.outputs.app_url || needs.android-package.outputs.app_url }}
           TESTMU_ANDROID_DEVICE: ${{ matrix.device }}
           TESTMU_ANDROID_VERSION: ${{ matrix.version }}
           TESTMU_DEVICE: ${{ matrix.device }}
@@ -412,6 +510,7 @@ jobs:
           TESTMU_SAMPLE_TEXT: ${{ vars.TESTMU_SAMPLE_TEXT || env.DEFAULT_TESTMU_SAMPLE_TEXT }}
           TESTMU_SKIP_SAMPLE_OVERRIDE: "true"
           TESTMU_REQUIRE_WER_AUDIO: "true"
+          TESTMU_AUDIO_EXTRACTION_MODE: ${{ matrix.audio_mode }}
           TESTMU_EXPECTED_MODELS: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
           TESTMU_BENCHMARK_REPORT_TIMEOUT_MS: 2400000
           GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
