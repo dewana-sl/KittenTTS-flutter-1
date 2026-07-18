@@ -369,7 +369,10 @@ jobs:
     name: TestMu Android benchmark (${{ matrix.device }})
     runs-on: ubuntu-latest
     timeout-minutes: 50
-    needs: android-package
+    if: always() && !cancelled() && needs.android-package.result == 'success'
+    needs:
+      - android-package
+      - testmu-ios-benchmark
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -459,7 +462,10 @@ jobs:
     name: TestMu web benchmark (${{ matrix.device }} / ${{ matrix.browser }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    needs: web-package
+    if: always() && !cancelled() && needs.web-package.result == 'success'
+    needs:
+      - web-package
+      - testmu-android-benchmark
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -559,7 +565,10 @@ jobs:
     name: TestMu desktop web benchmark (Linux / Chrome)
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    needs: web-package
+    if: always() && !cancelled() && needs.web-package.result == 'success'
+    needs:
+      - web-package
+      - testmu-web-benchmark
 
     steps:
       - uses: actions/checkout@v4
