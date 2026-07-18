@@ -86,8 +86,7 @@ jobs:
           bash tool/download_benchmark_models.sh
           flutter pub get
           flutter build apk --release \
-            --dart-define=TESTMU_MODEL_IDS=nano-int8,nano,micro,mini \
-            --dart-define=TESTMU_AUDIO_SEMANTICS_MODE=pager
+            --dart-define=TESTMU_MODEL_IDS=nano-int8,nano,micro,mini
           test -f build/app/outputs/flutter-apk/app-release.apk
         working-directory: benchmark/app
 
@@ -413,7 +412,6 @@ jobs:
           TESTMU_SAMPLE_TEXT: ${{ vars.TESTMU_SAMPLE_TEXT || env.DEFAULT_TESTMU_SAMPLE_TEXT }}
           TESTMU_SKIP_SAMPLE_OVERRIDE: "true"
           TESTMU_REQUIRE_WER_AUDIO: "true"
-          TESTMU_AUDIO_EXTRACTION_MODE: pager
           TESTMU_EXPECTED_MODELS: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
           TESTMU_BENCHMARK_REPORT_TIMEOUT_MS: 2400000
           GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
