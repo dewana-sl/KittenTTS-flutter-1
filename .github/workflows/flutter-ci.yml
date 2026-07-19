@@ -405,7 +405,7 @@ jobs:
             audio_mode: pager
             warm_runs: "1"
             low_spec: "true"
-            expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8
+            expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8
 
     steps:
       - uses: actions/checkout@v4

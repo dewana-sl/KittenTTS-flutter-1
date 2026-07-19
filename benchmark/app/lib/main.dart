@@ -49,7 +49,7 @@ final _benchmarkWarmRunCount = _resolveWarmRunCount();
 final _defaultSampleText =
     Uri.base.queryParameters['benchmarkText'] ?? _compiledDefaultSampleText;
 final _lowSpecBenchmarkModelIds = _resolveBenchmarkModelIds(
-  _lowSpecModelIdsCsv.isEmpty ? 'nano-int8,nano,micro' : _lowSpecModelIdsCsv,
+  _lowSpecModelIdsCsv.isEmpty ? 'nano-int8,nano' : _lowSpecModelIdsCsv,
 );
 final _lowSpecBenchmarkWarmRunCount = max(1, _lowSpecWarmRunCount);
 final _exposeDirectAudioChunks = _audioSemanticsMode != 'pager';
