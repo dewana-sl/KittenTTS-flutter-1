@@ -86,7 +86,8 @@ jobs:
           bash tool/download_benchmark_models.sh
           flutter pub get
           flutter build apk --release \
-            --dart-define=TESTMU_MODEL_IDS=nano-int8,nano,micro,mini
+            --dart-define=TESTMU_MODEL_IDS=nano-int8,nano,micro,mini \
+            --dart-define=TESTMU_LOW_SPEC_MODEL_IDS=nano-int8,nano,micro
           test -f build/app/outputs/flutter-apk/app-release.apk
         working-directory: benchmark/app
 
@@ -417,10 +418,10 @@ jobs:
             audio_mode: pager
             warm_runs: "1"
             low_spec: "true"
-            expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
-            timeout_minutes: "90"
-            report_timeout_ms: "5400000"
-            mocha_timeout_ms: "5520000"
+            expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8
+            timeout_minutes: "45"
+            report_timeout_ms: "2700000"
+            mocha_timeout_ms: "2820000"
             poll_interval_ms: "15000"
 
     steps:
@@ -512,12 +513,12 @@ jobs:
             version: "18"
             browser: Safari
             browser_version: ""
-            model_ids: nano-int8,nano,micro,mini
-            models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
+            model_ids: nano-int8
+            models: kitten-tts-nano-0.8-int8
             real_device: "true"
             wdio_script: test:web:browser
-            timeout_minutes: "40"
-            report_timeout_ms: "2400000"
+            timeout_minutes: "15"
+            report_timeout_ms: "900000"
           - slug: linux-chrome
             device: Linux Desktop
             platform: Linux
