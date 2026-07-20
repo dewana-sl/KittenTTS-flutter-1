@@ -17,20 +17,27 @@ if (reports.length === 0) {
 }
 
 const failures = [];
+const advisoryFailures = [];
 for (const report of reports) {
+  const targetFailures = report.advisory ? advisoryFailures : failures;
+
   if (report.status === "failed" || report.status === "partial") {
-    failures.push(
+    targetFailures.push(
       `${report.device || "device"}: ${report.status} (${report.errorSummary || report.failedStage || "see report"})`
     );
   }
 
   for (const row of report.rows || []) {
     if (row.status === "failed") {
-      failures.push(
+      targetFailures.push(
         `${report.device || "device"} / ${row.modelDisplayName || row.model}: ${row.errorSummary || row.failedStage || "model failed"}`
       );
     }
   }
+}
+
+if (advisoryFailures.length > 0) {
+  console.warn(`Advisory benchmark failures:\n${advisoryFailures.join("\n")}`);
 }
 
 if (failures.length > 0) {

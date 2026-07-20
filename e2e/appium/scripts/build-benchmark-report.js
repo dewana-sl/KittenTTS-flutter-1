@@ -215,10 +215,11 @@ function summarizeWorstDeviceRtf(report) {
 }
 
 function summarizeDeviceStatus(report) {
-  if (report.status === "failed") return "Failed";
-  if (report.status === "partial") return "Partial";
-  if (countFailedRows(report) > 0) return "Model failures";
-  return "Passed";
+  const prefix = report.advisory ? "Advisory " : "";
+  if (report.status === "failed") return `${prefix}Failed`;
+  if (report.status === "partial") return `${prefix}Partial`;
+  if (countFailedRows(report) > 0) return `${prefix}Model failures`;
+  return `${prefix}Passed`;
 }
 
 function summarizeRequestedPlatformVersion(report) {
@@ -249,6 +250,11 @@ function summarizeRequestedBrowser(report) {
 
 function joinNotes(notes) {
   return notes.filter(Boolean).join("; ");
+}
+
+function summarizeAdvisory(report) {
+  if (!report.advisory) return "";
+  return report.advisoryReason || "advisory device";
 }
 
 function formatPlatform(report) {
@@ -293,6 +299,7 @@ function buildDeviceStatusTable(reports) {
         ? `${countFailedRows(report)} model row(s) failed`
         : "";
     const notes = joinNotes([
+      summarizeAdvisory(report),
       statusNote,
       summarizeRequestedPlatformVersion(report),
       summarizeRequestedBrowser(report),

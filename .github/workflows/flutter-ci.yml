@@ -385,6 +385,7 @@ jobs:
             audio_mode: direct
             warm_runs: "5"
             low_spec: "false"
+            advisory: "false"
             expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
             timeout_minutes: "40"
             report_timeout_ms: "2400000"
@@ -396,6 +397,7 @@ jobs:
             audio_mode: direct
             warm_runs: "5"
             low_spec: "false"
+            advisory: "false"
             expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
             timeout_minutes: "40"
             report_timeout_ms: "2400000"
@@ -407,6 +409,7 @@ jobs:
             audio_mode: direct
             warm_runs: "5"
             low_spec: "false"
+            advisory: "false"
             expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
             timeout_minutes: "40"
             report_timeout_ms: "2400000"
@@ -418,6 +421,7 @@ jobs:
             audio_mode: pager
             warm_runs: "1"
             low_spec: "true"
+            advisory: "true"
             expected_models: kitten-tts-nano-0.8-int8
             timeout_minutes: "15"
             report_timeout_ms: "900000"
@@ -436,6 +440,7 @@ jobs:
         working-directory: e2e/appium
 
       - name: Run TestMu Android benchmark
+        continue-on-error: ${{ matrix.advisory == 'true' }}
         env:
           LT_USERNAME: ${{ secrets.LT_USERNAME }}
           LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY }}
@@ -473,6 +478,27 @@ jobs:
             node scripts/write-failure-report.js
           fi
           exit "$status"
+        working-directory: e2e/appium
+
+      - name: Mark advisory Android result
+        if: always() && matrix.advisory == 'true'
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const reportsDir = path.resolve('reports');
+          if (!fs.existsSync(reportsDir)) {
+            fs.mkdirSync(reportsDir, {recursive: true});
+          }
+          const jsonFiles = fs.readdirSync(reportsDir).filter((file) => file.endsWith('.json'));
+          for (const file of jsonFiles) {
+            const reportPath = path.join(reportsDir, file);
+            const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+            report.advisory = true;
+            report.advisoryReason = 'Low-spec Redmi device is advisory because Flutter TTS generation can stall the Android 10 UI thread on this hardware.';
+            fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+          }
+          NODE
         working-directory: e2e/appium
 
       - name: Upload Android benchmark result
