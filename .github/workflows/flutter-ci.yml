@@ -368,7 +368,7 @@ jobs:
   testmu-android-benchmark:
     name: TestMu Android benchmark (${{ matrix.device }})
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 100
     if: always() && !cancelled() && needs.android-package.result == 'success'
     needs:
       - android-package
@@ -385,6 +385,10 @@ jobs:
             warm_runs: "5"
             low_spec: "false"
             expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
+            timeout_minutes: "40"
+            report_timeout_ms: "2400000"
+            mocha_timeout_ms: "2520000"
+            poll_interval_ms: "5000"
           - slug: galaxy-note10
             device: Galaxy Note10
             version: "12"
@@ -392,6 +396,10 @@ jobs:
             warm_runs: "5"
             low_spec: "false"
             expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
+            timeout_minutes: "40"
+            report_timeout_ms: "2400000"
+            mocha_timeout_ms: "2520000"
+            poll_interval_ms: "5000"
           - slug: pixel-8
             device: Pixel 8
             version: "14"
@@ -399,13 +407,21 @@ jobs:
             warm_runs: "5"
             low_spec: "false"
             expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
+            timeout_minutes: "40"
+            report_timeout_ms: "2400000"
+            mocha_timeout_ms: "2520000"
+            poll_interval_ms: "5000"
           - slug: xiaomi-redmi-note-8
             device: Xiaomi Redmi Note 8
             version: "10"
             audio_mode: pager
             warm_runs: "1"
             low_spec: "true"
-            expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8
+            expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
+            timeout_minutes: "90"
+            report_timeout_ms: "5400000"
+            mocha_timeout_ms: "5520000"
+            poll_interval_ms: "15000"
 
     steps:
       - uses: actions/checkout@v4
@@ -435,19 +451,22 @@ jobs:
           TESTMU_EXPECTED_MODELS: ${{ matrix.expected_models }}
           TESTMU_EXPECTED_WARM_RUNS: ${{ matrix.warm_runs }}
           TESTMU_LOW_SPEC_MODE: ${{ matrix.low_spec }}
-          TESTMU_BENCHMARK_REPORT_TIMEOUT_MS: 2400000
+          TESTMU_BENCHMARK_REPORT_TIMEOUT_MS: ${{ matrix.report_timeout_ms }}
+          TESTMU_BENCHMARK_POLL_INTERVAL_MS: ${{ matrix.poll_interval_ms }}
+          TESTMU_MOCHA_TIMEOUT_MS: ${{ matrix.mocha_timeout_ms }}
+          TESTMU_ANDROID_TIMEOUT_MINUTES: ${{ matrix.timeout_minutes }}
           GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -o pipefail
           mkdir -p reports
           export BENCHMARK_STARTED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
           set +e
-          timeout 40m npm run test:android 2>&1 | tee reports/appium-output.log
+          timeout "${TESTMU_ANDROID_TIMEOUT_MINUTES}m" npm run test:android 2>&1 | tee reports/appium-output.log
           status=${PIPESTATUS[0]}
           set -e
           export BENCHMARK_FINISHED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
           if [ "$status" -eq 124 ]; then
-            echo "Timed out after 40 minutes while waiting for the TestMu/Appium Android benchmark to finish." | tee -a reports/appium-output.log
+            echo "Timed out after ${TESTMU_ANDROID_TIMEOUT_MINUTES} minutes while waiting for the TestMu/Appium Android benchmark to finish." | tee -a reports/appium-output.log
           fi
           if [ "$status" -ne 0 ] && [ -z "$(find reports -name '*.json' -print -quit)" ]; then
             node scripts/write-failure-report.js

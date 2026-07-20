@@ -18,6 +18,9 @@ const EXPECTED_MODEL_DISPLAY_NAMES = new Map([
 const BENCHMARK_REPORT_TIMEOUT_MS = Number(
   process.env.TESTMU_BENCHMARK_REPORT_TIMEOUT_MS || 30 * 60 * 1000
 );
+const BENCHMARK_POLL_INTERVAL_MS = Number(
+  process.env.TESTMU_BENCHMARK_POLL_INTERVAL_MS || 5000
+);
 const APP_READY_TIMEOUT_MS = Number(
   process.env.TESTMU_APP_READY_TIMEOUT_MS || 6 * 60 * 1000
 );
@@ -877,7 +880,7 @@ async function waitForBenchmarkReport(timeoutMs) {
       console.log(`[KittenTTS benchmark status] ${statusLabel}`);
     }
 
-    await browser.pause(5000);
+    await browser.pause(BENCHMARK_POLL_INTERVAL_MS);
   }
 
   const timeoutMessage = `Timed out waiting for benchmark-report. Last app status: ${lastStatus}`;
