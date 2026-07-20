@@ -87,7 +87,7 @@ jobs:
           flutter pub get
           flutter build apk --release \
             --dart-define=TESTMU_MODEL_IDS=nano-int8,nano,micro,mini \
-            --dart-define=TESTMU_LOW_SPEC_MODEL_IDS=nano-int8,nano
+            --dart-define=TESTMU_LOW_SPEC_MODEL_IDS=nano-int8
           test -f build/app/outputs/flutter-apk/app-release.apk
         working-directory: benchmark/app
 
@@ -418,10 +418,10 @@ jobs:
             audio_mode: pager
             warm_runs: "1"
             low_spec: "true"
-            expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8
-            timeout_minutes: "25"
-            report_timeout_ms: "1500000"
-            mocha_timeout_ms: "1620000"
+            expected_models: kitten-tts-nano-0.8-int8
+            timeout_minutes: "15"
+            report_timeout_ms: "900000"
+            mocha_timeout_ms: "1020000"
             poll_interval_ms: "15000"
 
     steps:
