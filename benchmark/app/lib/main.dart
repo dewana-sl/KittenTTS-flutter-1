@@ -55,6 +55,7 @@ final _lowSpecBenchmarkModelIds = _resolveBenchmarkModelIds(
 );
 final _lowSpecBenchmarkWarmRunCount = max(1, _lowSpecWarmRunCount);
 final _exposeDirectAudioChunks = _audioSemanticsMode != 'pager';
+final _benchmarkModelTimeout = _resolveBenchmarkModelTimeout();
 const List<OrtProvider>? _benchmarkOrtProviders = null;
 
 const _background = Color(0xFFF8FAFC);
@@ -207,24 +208,28 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
           benchmarkWarmRunCount,
         );
         final loadStarted = Stopwatch()..start();
-        tts = await KittenTTS.create(
-          config: KittenTTSConfig(
-            model: modelId,
-            analytics: false,
-            ortNumThreads: _ortNumThreads,
-            ortProviders: _benchmarkOrtProviders,
-            maxTokensPerChunk: _maxTokensPerChunk,
-            modelFiles: modelFiles,
-            phonemizer: CEPhonemizer(
-              rulesText: phonemizerData.rulesText,
-              listText: phonemizerData.listText,
+        final loadedTts = await _withBenchmarkTimeout(
+          KittenTTS.create(
+            config: KittenTTSConfig(
+              model: modelId,
+              analytics: false,
+              ortNumThreads: _ortNumThreads,
+              ortProviders: _benchmarkOrtProviders,
+              maxTokensPerChunk: _maxTokensPerChunk,
+              modelFiles: modelFiles,
+              phonemizer: CEPhonemizer(
+                rulesText: phonemizerData.rulesText,
+                listText: phonemizerData.listText,
+              ),
             ),
+            onProgress: (progress, [info]) {
+              final percent = (progress * 100).clamp(0, 100).toStringAsFixed(0);
+              _setStatus('Loading ${modelDisplayName(modelId)} $percent%');
+            },
           ),
-          onProgress: (progress, [info]) {
-            final percent = (progress * 100).clamp(0, 100).toStringAsFixed(0);
-            _setStatus('Loading ${modelDisplayName(modelId)} $percent%');
-          },
+          'Loading ${modelDisplayName(modelId)}',
         );
+        tts = loadedTts;
         loadStarted.stop();
 
         await _markRowRunning(
@@ -237,7 +242,10 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
           'Cold run ${modelDisplayName(modelId)}',
           benchmarkWarmRunCount,
         );
-        final first = await _timedGenerate(tts, sampleText);
+        final first = await _withBenchmarkTimeout(
+          _timedGenerate(loadedTts, sampleText),
+          'Cold run ${modelDisplayName(modelId)}',
+        );
         final warm = <_TimedGeneration>[];
 
         for (var index = 0; index < benchmarkWarmRunCount; index += 1) {
@@ -251,7 +259,12 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
             'Warm run ${index + 1}/$benchmarkWarmRunCount ${modelDisplayName(modelId)}',
             benchmarkWarmRunCount,
           );
-          warm.add(await _timedGenerate(tts, sampleText));
+          warm.add(
+            await _withBenchmarkTimeout(
+              _timedGenerate(loadedTts, sampleText),
+              'Warm run ${index + 1}/$benchmarkWarmRunCount ${modelDisplayName(modelId)}',
+            ),
+          );
         }
 
         final best = warm.reduce(
@@ -367,6 +380,19 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
     return _TimedGeneration(
       result: result,
       generationMs: max(1, timer.elapsedMilliseconds),
+    );
+  }
+
+  Future<T> _withBenchmarkTimeout<T>(Future<T> future, String stage) {
+    final timeout = _benchmarkModelTimeout;
+    if (timeout == null) return future;
+    return future.timeout(
+      timeout,
+      onTimeout: () {
+        throw TimeoutException(
+          '$stage timed out after ${timeout.inSeconds} seconds.',
+        );
+      },
     );
   }
 
@@ -792,6 +818,13 @@ int _resolveWarmRunCount() {
   );
   if (override != null && override > 0) return override;
   return _defaultWarmRunCount;
+}
+
+Duration? _resolveBenchmarkModelTimeout() {
+  final rawValue = Uri.base.queryParameters['benchmarkModelTimeoutMs'];
+  final timeoutMs = int.tryParse(rawValue ?? '');
+  if (timeoutMs == null || timeoutMs <= 0) return null;
+  return Duration(milliseconds: timeoutMs);
 }
 
 String _slugify(String value) {

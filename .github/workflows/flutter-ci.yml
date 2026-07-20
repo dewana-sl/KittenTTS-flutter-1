@@ -499,15 +499,37 @@ jobs:
             platform: Android
             version: "14"
             browser: Chrome
+            browser_version: ""
             model_ids: nano-int8,nano,micro,mini
             models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
+            real_device: "true"
+            wdio_script: test:web:browser
+            timeout_minutes: "40"
+            report_timeout_ms: "2400000"
           - slug: ipad-10-9-safari
             device: iPad 10.9 (2022)
             platform: iOS
             version: "18"
             browser: Safari
+            browser_version: ""
             model_ids: nano-int8,nano,micro,mini
             models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
+            real_device: "true"
+            wdio_script: test:web:browser
+            timeout_minutes: "40"
+            report_timeout_ms: "2400000"
+          - slug: linux-chrome
+            device: Linux Desktop
+            platform: Linux
+            version: ""
+            browser: Chrome
+            browser_version: latest
+            model_ids: nano-int8,nano,micro,mini
+            models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
+            real_device: "false"
+            wdio_script: test:web:desktop
+            timeout_minutes: "15"
+            report_timeout_ms: "900000"
 
     steps:
       - uses: actions/checkout@v4
@@ -547,36 +569,38 @@ jobs:
           accessKey: ${{ secrets.LT_ACCESS_KEY }}
           tunnelName: kittentts-flutter-web-${{ github.run_id }}-${{ matrix.slug }}
 
-      - name: Run TestMu mobile browser benchmark
+      - name: Run TestMu browser benchmark
         env:
           LT_USERNAME: ${{ secrets.LT_USERNAME }}
           LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY }}
-          TESTMU_WEB_URL: "http://localhost.lambdatest.com:4173/?benchmarkAutoStart=true&benchmarkModelIds=${{ matrix.model_ids }}&benchmarkWarmRuns=1&benchmarkText=KittenTTS%20web%20benchmark."
+          TESTMU_WEB_URL: "http://localhost.lambdatest.com:4173?benchmarkAutoStart=true&benchmarkModelIds=${{ matrix.model_ids }}&benchmarkWarmRuns=1&benchmarkText=KittenTTS%20web%20benchmark.&benchmarkIncludeAudio=true&benchmarkModelTimeoutMs=300000&benchmarkBundledAssetsPath=/kittentts"
           TESTMU_TUNNEL_NAME: kittentts-flutter-web-${{ github.run_id }}-${{ matrix.slug }}
           TESTMU_DEVICE: ${{ matrix.device }}
           TESTMU_PLATFORM_NAME: ${{ matrix.platform }}
           TESTMU_PLATFORM_VERSION: ${{ matrix.version }}
           TESTMU_BROWSER_NAME: ${{ matrix.browser }}
+          TESTMU_BROWSER_VERSION: ${{ matrix.browser_version }}
+          TESTMU_REAL_DEVICE: ${{ matrix.real_device }}
           TESTMU_SAMPLE_TEXT: KittenTTS web benchmark.
           TESTMU_EXPECTED_MODELS: ${{ matrix.models }}
           TESTMU_EXPECTED_WARM_RUNS: 1
           TESTMU_REQUIRE_WER_AUDIO: "true"
-          TESTMU_BENCHMARK_REPORT_TIMEOUT_MS: 2400000
+          TESTMU_BENCHMARK_REPORT_TIMEOUT_MS: ${{ matrix.report_timeout_ms }}
           GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -o pipefail
           mkdir -p reports
           export BENCHMARK_STARTED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
           set +e
-          timeout 40m npm run test:web:browser 2>&1 | tee reports/appium-output.log
+          timeout "${{ matrix.timeout_minutes }}m" npm run "${{ matrix.wdio_script }}" 2>&1 | tee reports/appium-output.log
           status=${PIPESTATUS[0]}
           set -e
           export BENCHMARK_FINISHED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
           if [ "$status" -eq 124 ]; then
-            echo "Timed out after 40 minutes while waiting for the TestMu/Appium mobile browser benchmark to finish." | tee -a reports/appium-output.log
+            echo "Timed out after ${{ matrix.timeout_minutes }} minutes while waiting for the TestMu/Appium browser benchmark to finish." | tee -a reports/appium-output.log
           fi
           if [ "$status" -ne 0 ] && [ -z "$(find reports -name '*.json' -print -quit)" ]; then
-            BENCHMARK_FAILED_STAGE="Run TestMu mobile browser benchmark" TESTMU_TARGET=web node scripts/write-failure-report.js
+            BENCHMARK_FAILED_STAGE="Run TestMu browser benchmark" TESTMU_TARGET=web node scripts/write-failure-report.js
           fi
           exit "$status"
         working-directory: e2e/appium
@@ -588,94 +612,6 @@ jobs:
           name: benchmark-result-web-${{ matrix.slug }}
           path: e2e/appium/reports
 
-  testmu-desktop-web-benchmark:
-    name: TestMu desktop web benchmark (Linux / Chrome)
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    if: always() && !cancelled() && needs.web-package.result == 'success'
-    needs:
-      - web-package
-      - testmu-web-benchmark
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Download web build
-        uses: actions/download-artifact@v4
-        with:
-          name: benchmark-flutter-web
-          path: benchmark/app/build/web
-
-      - name: Install Appium harness
-        run: npm ci
-        working-directory: e2e/appium
-
-      - name: Start web server
-        run: |
-          nohup python3 -m http.server 4173 --bind 0.0.0.0 > "$RUNNER_TEMP/flutter-web-server.log" 2>&1 &
-          echo $! > "$RUNNER_TEMP/flutter-web-server.pid"
-          for i in {1..30}; do
-            if curl -fsS http://127.0.0.1:4173 >/dev/null; then
-              exit 0
-            fi
-            sleep 1
-          done
-          cat "$RUNNER_TEMP/flutter-web-server.log"
-          exit 1
-        working-directory: benchmark/app/build/web
-
-      - name: Start LambdaTest tunnel
-        uses: LambdaTest/LambdaTest-tunnel-action@v2
-        with:
-          user: ${{ secrets.LT_USERNAME }}
-          accessKey: ${{ secrets.LT_ACCESS_KEY }}
-          tunnelName: kittentts-flutter-web-${{ github.run_id }}-linux-chrome
-
-      - name: Run TestMu desktop browser benchmark
-        env:
-          LT_USERNAME: ${{ secrets.LT_USERNAME }}
-          LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY }}
-          TESTMU_WEB_URL: "http://localhost.lambdatest.com:4173/?benchmarkAutoStart=true&benchmarkModelIds=nano-int8,nano,micro,mini&benchmarkWarmRuns=1&benchmarkText=KittenTTS%20web%20benchmark."
-          TESTMU_TUNNEL_NAME: kittentts-flutter-web-${{ github.run_id }}-linux-chrome
-          TESTMU_DEVICE: Linux Desktop
-          TESTMU_PLATFORM_NAME: Linux
-          TESTMU_BROWSER_NAME: Chrome
-          TESTMU_BROWSER_VERSION: latest
-          TESTMU_SAMPLE_TEXT: KittenTTS web benchmark.
-          TESTMU_EXPECTED_MODELS: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
-          TESTMU_EXPECTED_WARM_RUNS: 1
-          TESTMU_REQUIRE_WER_AUDIO: "true"
-          TESTMU_BENCHMARK_REPORT_TIMEOUT_MS: 900000
-          GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          set -o pipefail
-          mkdir -p reports
-          export BENCHMARK_STARTED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
-          set +e
-          timeout 15m npm run test:web:desktop 2>&1 | tee reports/appium-output.log
-          status=${PIPESTATUS[0]}
-          set -e
-          export BENCHMARK_FINISHED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
-          if [ "$status" -eq 124 ]; then
-            echo "Timed out after 15 minutes while waiting for the TestMu/Appium desktop browser benchmark to finish." | tee -a reports/appium-output.log
-          fi
-          if [ "$status" -ne 0 ] && [ -z "$(find reports -name '*.json' -print -quit)" ]; then
-            BENCHMARK_FAILED_STAGE="Run TestMu desktop browser benchmark" TESTMU_TARGET=web node scripts/write-failure-report.js
-          fi
-          exit "$status"
-        working-directory: e2e/appium
-
-      - name: Upload desktop web benchmark result
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmark-result-web-linux-chrome
-          path: e2e/appium/reports
-
   benchmark-report:
     name: Benchmark report
     runs-on: ubuntu-latest
@@ -684,7 +620,6 @@ jobs:
       - testmu-ios-benchmark
       - testmu-android-benchmark
       - testmu-web-benchmark
-      - testmu-desktop-web-benchmark
 
     steps:
       - uses: actions/checkout@v4
