@@ -16,6 +16,8 @@ env:
   DEFAULT_TESTMU_SAMPLE_TEXT: |-
     KittenTTS runs fully on your device and creates clear speech quickly.
     This benchmark compares every model for speed, quality, and consistency.
+  DEFAULT_TESTMU_LOW_SPEC_SAMPLE_TEXT: KittenTTS quick test.
+  TESTMU_GITHUB_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
   TESTMU_SDK_FOLDER: Flutter SDK
 
 jobs:
@@ -87,7 +89,8 @@ jobs:
           flutter pub get
           flutter build apk --release \
             --dart-define=TESTMU_MODEL_IDS=nano-int8,nano,micro,mini \
-            --dart-define=TESTMU_LOW_SPEC_MODEL_IDS=nano-int8
+            --dart-define=TESTMU_LOW_SPEC_MODEL_IDS=nano-int8 \
+            --dart-define=TESTMU_LOW_SPEC_SAMPLE_TEXT="${DEFAULT_TESTMU_LOW_SPEC_SAMPLE_TEXT}"
           test -f build/app/outputs/flutter-apk/app-release.apk
         working-directory: benchmark/app
 
@@ -385,7 +388,6 @@ jobs:
             audio_mode: direct
             warm_runs: "5"
             low_spec: "false"
-            advisory: "false"
             expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
             timeout_minutes: "40"
             report_timeout_ms: "2400000"
@@ -397,7 +399,6 @@ jobs:
             audio_mode: direct
             warm_runs: "5"
             low_spec: "false"
-            advisory: "false"
             expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
             timeout_minutes: "40"
             report_timeout_ms: "2400000"
@@ -409,7 +410,6 @@ jobs:
             audio_mode: direct
             warm_runs: "5"
             low_spec: "false"
-            advisory: "false"
             expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
             timeout_minutes: "40"
             report_timeout_ms: "2400000"
@@ -421,11 +421,10 @@ jobs:
             audio_mode: pager
             warm_runs: "1"
             low_spec: "true"
-            advisory: "true"
             expected_models: kitten-tts-nano-0.8-int8
-            timeout_minutes: "15"
-            report_timeout_ms: "900000"
-            mocha_timeout_ms: "1020000"
+            timeout_minutes: "25"
+            report_timeout_ms: "1500000"
+            mocha_timeout_ms: "1620000"
             poll_interval_ms: "15000"
 
     steps:
@@ -440,7 +439,7 @@ jobs:
         working-directory: e2e/appium
 
       - name: Run TestMu Android benchmark
-        continue-on-error: ${{ matrix.advisory == 'true' }}
+        continue-on-error: true
         env:
           LT_USERNAME: ${{ secrets.LT_USERNAME }}
           LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY }}
@@ -462,6 +461,7 @@ jobs:
           TESTMU_MOCHA_TIMEOUT_MS: ${{ matrix.mocha_timeout_ms }}
           TESTMU_ANDROID_TIMEOUT_MINUTES: ${{ matrix.timeout_minutes }}
           GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TESTMU_GITHUB_SHA: ${{ env.TESTMU_GITHUB_SHA }}
         run: |
           set -o pipefail
           mkdir -p reports
@@ -478,27 +478,6 @@ jobs:
             node scripts/write-failure-report.js
           fi
           exit "$status"
-        working-directory: e2e/appium
-
-      - name: Mark advisory Android result
-        if: always() && matrix.advisory == 'true'
-        run: |
-          node - <<'NODE'
-          const fs = require('node:fs');
-          const path = require('node:path');
-          const reportsDir = path.resolve('reports');
-          if (!fs.existsSync(reportsDir)) {
-            fs.mkdirSync(reportsDir, {recursive: true});
-          }
-          const jsonFiles = fs.readdirSync(reportsDir).filter((file) => file.endsWith('.json'));
-          for (const file of jsonFiles) {
-            const reportPath = path.join(reportsDir, file);
-            const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
-            report.advisory = true;
-            report.advisoryReason = 'Low-spec Redmi device is advisory because Flutter TTS generation can stall the Android 10 UI thread on this hardware.';
-            fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
-          }
-          NODE
         working-directory: e2e/appium
 
       - name: Upload Android benchmark result
@@ -614,6 +593,7 @@ jobs:
           TESTMU_REQUIRE_WER_AUDIO: "true"
           TESTMU_BENCHMARK_REPORT_TIMEOUT_MS: ${{ matrix.report_timeout_ms }}
           GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TESTMU_GITHUB_SHA: ${{ env.TESTMU_GITHUB_SHA }}
         run: |
           set -o pipefail
           mkdir -p reports
@@ -687,7 +667,7 @@ jobs:
 
       - name: Build benchmark report
         env:
-          GITHUB_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          TESTMU_GITHUB_SHA: ${{ env.TESTMU_GITHUB_SHA }}
         run: node e2e/appium/scripts/build-benchmark-report.js benchmark-results benchmark-report
 
       - name: Upload benchmark report

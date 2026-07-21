@@ -222,7 +222,7 @@ function main() {
     realDevice: process.env.TESTMU_REAL_DEVICE !== "false",
     sessionId: null,
     githubRunId: process.env.GITHUB_RUN_ID || null,
-    githubSha: process.env.GITHUB_SHA || null,
+    githubSha: process.env.TESTMU_GITHUB_SHA || process.env.GITHUB_SHA || null,
     deviceStartedAt: startedAtMs ? new Date(startedAtMs).toISOString() : null,
     deviceFinishedAt: new Date(finishedAtMs).toISOString(),
     totalRuntimeSeconds,

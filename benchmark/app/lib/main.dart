@@ -19,6 +19,10 @@ const _compiledDefaultSampleText = String.fromEnvironment(
       'KittenTTS runs fully on your device and creates clear speech quickly.\n'
       'This benchmark compares every model for speed, quality, and consistency.',
 );
+const _compiledLowSpecSampleText = String.fromEnvironment(
+  'TESTMU_LOW_SPEC_SAMPLE_TEXT',
+  defaultValue: 'KittenTTS quick test.',
+);
 const _defaultWarmRunCount = int.fromEnvironment(
   'TESTMU_WARM_RUNS',
   defaultValue: 5,
@@ -48,6 +52,9 @@ final _benchmarkModelIds = _resolveBenchmarkModelIds();
 final _benchmarkWarmRunCount = _resolveWarmRunCount();
 final _defaultSampleText =
     Uri.base.queryParameters['benchmarkText'] ?? _compiledDefaultSampleText;
+final _lowSpecBenchmarkSampleText =
+    Uri.base.queryParameters['benchmarkLowSpecText'] ??
+    _compiledLowSpecSampleText;
 final _lowSpecBenchmarkModelIds = _resolveBenchmarkModelIds(
   _lowSpecModelIdsCsv.isEmpty
       ? 'nano-int8,nano,micro,mini'
@@ -130,12 +137,13 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
   Future<void> _runBenchmark({
     List<KittenTTSModelId>? modelIds,
     int? warmRunCount,
+    String? sampleTextOverride,
   }) async {
     if (_running) return;
 
     final benchmarkModelIds = modelIds ?? _benchmarkModelIds;
     final benchmarkWarmRunCount = warmRunCount ?? _benchmarkWarmRunCount;
-    final sampleText = _textController.text.trim();
+    final sampleText = (sampleTextOverride ?? _textController.text).trim();
     if (sampleText.isEmpty) {
       setState(() => _errorMessage = 'Sample text is empty.');
       return;
@@ -598,6 +606,7 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
                     : () => _runBenchmark(
                         modelIds: _lowSpecBenchmarkModelIds,
                         warmRunCount: _lowSpecBenchmarkWarmRunCount,
+                        sampleTextOverride: _lowSpecBenchmarkSampleText,
                       ),
                 child: Text(
                   _running

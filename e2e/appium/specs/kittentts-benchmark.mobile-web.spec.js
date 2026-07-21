@@ -284,7 +284,7 @@ function writeDeviceReport(report, startedAtMs) {
     realDevice: process.env.TESTMU_REAL_DEVICE !== "false",
     sessionId: browser.sessionId,
     githubRunId: process.env.GITHUB_RUN_ID || null,
-    githubSha: process.env.GITHUB_SHA || null,
+    githubSha: process.env.TESTMU_GITHUB_SHA || process.env.GITHUB_SHA || null,
     deviceStartedAt: new Date(startedAtMs).toISOString(),
     deviceFinishedAt: new Date(finishedAtMs).toISOString(),
     totalRuntimeMs: finishedAtMs - startedAtMs,
