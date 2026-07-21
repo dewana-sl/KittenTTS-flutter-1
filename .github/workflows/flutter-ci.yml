@@ -422,9 +422,9 @@ jobs:
             warm_runs: "1"
             low_spec: "true"
             expected_models: kitten-tts-nano-0.8-int8
-            timeout_minutes: "25"
-            report_timeout_ms: "1500000"
-            mocha_timeout_ms: "1620000"
+            timeout_minutes: "40"
+            report_timeout_ms: "2400000"
+            mocha_timeout_ms: "2520000"
             poll_interval_ms: "15000"
 
     steps:
@@ -522,8 +522,8 @@ jobs:
             models: kitten-tts-nano-0.8-int8
             real_device: "true"
             wdio_script: test:web:browser
-            timeout_minutes: "15"
-            report_timeout_ms: "900000"
+            timeout_minutes: "40"
+            report_timeout_ms: "2400000"
           - slug: linux-chrome
             device: Linux Desktop
             platform: Linux

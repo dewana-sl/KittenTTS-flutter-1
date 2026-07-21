@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:kittentts_flutter/kittentts_flutter.dart';
 
 import 'benchmark_model_assets.dart';
+import 'low_spec_benchmark_worker.dart';
 import 'web_bridge.dart';
 
 void main() {
@@ -138,6 +139,7 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
     List<KittenTTSModelId>? modelIds,
     int? warmRunCount,
     String? sampleTextOverride,
+    bool runInWorker = false,
   }) async {
     if (_running) return;
 
@@ -179,6 +181,19 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
       chunks,
       benchmarkWarmRunCount,
     );
+
+    if (runInWorker) {
+      await _runLowSpecWorkerBenchmark(
+        sampleText: sampleText,
+        startedAt: startedAt,
+        rows: rows,
+        chunks: chunks,
+        benchmarkModelIds: benchmarkModelIds,
+        benchmarkWarmRunCount: benchmarkWarmRunCount,
+        phonemizerData: phonemizerData,
+      );
+      return;
+    }
 
     for (final entry in benchmarkModelIds.asMap().entries) {
       final modelId = entry.value;
@@ -379,6 +394,128 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
       _audioChunks = List.unmodifiable(chunks);
       _audioPagerIndex = 0;
     });
+  }
+
+  Future<void> _runLowSpecWorkerBenchmark({
+    required String sampleText,
+    required DateTime startedAt,
+    required List<Map<String, Object?>> rows,
+    required List<_AudioChunk> chunks,
+    required List<KittenTTSModelId> benchmarkModelIds,
+    required int benchmarkWarmRunCount,
+    required _BenchmarkPhonemizerData phonemizerData,
+  }) async {
+    try {
+      for (final entry in benchmarkModelIds.asMap().entries) {
+        await _markRowRunning(
+          sampleText,
+          startedAt,
+          rows,
+          chunks,
+          rows[entry.key],
+          entry.value,
+          'Copying ${modelDisplayName(entry.value)} assets',
+          benchmarkWarmRunCount,
+        );
+      }
+      final modelFilesById = <String, Map<String, String>>{};
+      for (final modelId in benchmarkModelIds) {
+        final modelFiles = await resolveBenchmarkModelFiles(modelId);
+        modelFilesById[modelId] = {
+          'onnxPath': modelFiles.onnxPath,
+          'voicesPath': modelFiles.voicesPath,
+        };
+      }
+
+      for (final entry in benchmarkModelIds.asMap().entries) {
+        await _markRowRunning(
+          sampleText,
+          startedAt,
+          rows,
+          chunks,
+          rows[entry.key],
+          entry.value,
+          'Background benchmark ${modelDisplayName(entry.value)}',
+          benchmarkWarmRunCount,
+        );
+      }
+
+      final result = await runLowSpecBenchmarkInWorker(
+        rootIsolateToken: RootIsolateToken.instance,
+        sampleText: sampleText,
+        startedAtIso: startedAt.toIso8601String(),
+        modelIds: benchmarkModelIds,
+        modelFilesById: modelFilesById,
+        warmRunCount: benchmarkWarmRunCount,
+        ortNumThreads: _ortNumThreads,
+        maxTokensPerChunk: _maxTokensPerChunk,
+        voice: _voice,
+        speed: _speed,
+        phonemizerRulesText: phonemizerData.rulesText,
+        phonemizerListText: phonemizerData.listText,
+        audioChunkSize: _audioChunkSize,
+      );
+      final report = (result['report'] as Map).cast<String, Object?>();
+      final audioChunkMaps =
+          (result['audioChunks'] as List? ?? const <Object?>[])
+              .cast<Map>()
+              .map((chunk) => chunk.cast<String, Object?>())
+              .toList(growable: false);
+      setState(() {
+        _running = false;
+        _status = report['status'] == 'passed'
+            ? 'Benchmark finished'
+            : 'Benchmark finished with model failures';
+        _report = report;
+        _reportJson = const JsonEncoder.withIndent('  ').convert(report);
+        _audioChunks = List.unmodifiable(
+          audioChunkMaps.map(
+            (chunk) => _AudioChunk(
+              key: chunk['key'] as String,
+              accessibilityId: chunk['accessibilityId'] as String,
+              value: chunk['value'] as String,
+            ),
+          ),
+        );
+        _audioPagerIndex = 0;
+      });
+    } catch (error, stackTrace) {
+      for (final entry in benchmarkModelIds.asMap().entries) {
+        rows[entry.key]
+          ..clear()
+          ..addAll({
+            'model': modelRepoId(entry.value),
+            'modelId': entry.value,
+            'modelDisplayName': modelDisplayName(entry.value),
+            'status': 'failed',
+            'failedStage':
+                'Background benchmark ${modelDisplayName(entry.value)}',
+            'errorSummary': _friendlyError(error),
+            'errorDetails': stackTrace
+                .toString()
+                .split('\n')
+                .take(8)
+                .join('\n'),
+          });
+      }
+      final finishedAt = DateTime.now().toUtc();
+      final report = _buildReport(
+        sampleText: sampleText,
+        startedAt: startedAt,
+        finishedAt: finishedAt,
+        status: 'partial',
+        rows: rows,
+        warmRunCount: benchmarkWarmRunCount,
+      );
+      setState(() {
+        _running = false;
+        _status = 'Benchmark finished with model failures';
+        _report = report;
+        _reportJson = const JsonEncoder.withIndent('  ').convert(report);
+        _audioChunks = const [];
+        _audioPagerIndex = 0;
+      });
+    }
   }
 
   Future<_TimedGeneration> _timedGenerate(KittenTTS tts, String text) async {
@@ -607,6 +744,7 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
                         modelIds: _lowSpecBenchmarkModelIds,
                         warmRunCount: _lowSpecBenchmarkWarmRunCount,
                         sampleTextOverride: _lowSpecBenchmarkSampleText,
+                        runInWorker: true,
                       ),
                 child: Text(
                   _running
