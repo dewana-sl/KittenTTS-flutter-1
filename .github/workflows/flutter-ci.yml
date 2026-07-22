@@ -437,6 +437,16 @@ jobs:
       max-parallel: 1
       matrix:
         include:
+          - slug: xiaomi-redmi-note-8
+            device: Xiaomi Redmi Note 8
+            version: "10"
+            audio_mode: direct
+            warm_runs: "5"
+            expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
+            timeout_minutes: "75"
+            report_timeout_ms: "3900000"
+            mocha_timeout_ms: "4020000"
+            poll_interval_ms: "30000"
           - slug: pixel-5
             device: Pixel 5
             version: "12"
@@ -467,16 +477,6 @@ jobs:
             report_timeout_ms: "1800000"
             mocha_timeout_ms: "1920000"
             poll_interval_ms: "5000"
-          - slug: xiaomi-redmi-note-8
-            device: Xiaomi Redmi Note 8
-            version: "10"
-            audio_mode: direct
-            warm_runs: "5"
-            expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
-            timeout_minutes: "75"
-            report_timeout_ms: "3900000"
-            mocha_timeout_ms: "4020000"
-            poll_interval_ms: "30000"
 
     steps:
       - uses: actions/checkout@v4
