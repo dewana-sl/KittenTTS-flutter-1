@@ -473,9 +473,9 @@ jobs:
             audio_mode: direct
             warm_runs: "5"
             expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
-            timeout_minutes: "35"
-            report_timeout_ms: "1800000"
-            mocha_timeout_ms: "1920000"
+            timeout_minutes: "50"
+            report_timeout_ms: "2700000"
+            mocha_timeout_ms: "2820000"
             poll_interval_ms: "5000"
 
     steps:
@@ -490,6 +490,7 @@ jobs:
         working-directory: e2e/appium
 
       - name: Run TestMu Android benchmark
+        id: run-android-benchmark
         continue-on-error: true
         env:
           LT_USERNAME: ${{ secrets.LT_USERNAME }}
@@ -536,6 +537,12 @@ jobs:
         with:
           name: benchmark-result-android-${{ matrix.slug }}
           path: e2e/appium/reports
+
+      - name: Fail Android device job if benchmark failed
+        if: steps.run-android-benchmark.outcome == 'failure'
+        run: |
+          echo "The ${{ matrix.device }} benchmark failed. Uploaded the device report and logs above."
+          exit 1
 
   testmu-web-benchmark:
     name: TestMu web benchmark (${{ matrix.device }} / ${{ matrix.browser }})
