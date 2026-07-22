@@ -87,8 +87,7 @@ jobs:
           bash tool/download_benchmark_models.sh
           flutter pub get
           flutter build apk --release \
-            --dart-define=TESTMU_MODEL_IDS=nano-int8,nano,micro,mini \
-            --dart-define=TESTMU_LOW_SPEC_MODEL_IDS=nano-int8
+            --dart-define=TESTMU_MODEL_IDS=nano-int8,nano,micro,mini
           test -f build/app/outputs/flutter-apk/app-release.apk
         working-directory: benchmark/app
 
@@ -385,45 +384,41 @@ jobs:
             version: "12"
             audio_mode: direct
             warm_runs: "5"
-            low_spec: "false"
             expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
-            timeout_minutes: "40"
-            report_timeout_ms: "2400000"
-            mocha_timeout_ms: "2520000"
+            timeout_minutes: "35"
+            report_timeout_ms: "1800000"
+            mocha_timeout_ms: "1920000"
             poll_interval_ms: "5000"
           - slug: galaxy-note10
             device: Galaxy Note10
             version: "12"
             audio_mode: direct
             warm_runs: "5"
-            low_spec: "false"
             expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
-            timeout_minutes: "40"
-            report_timeout_ms: "2400000"
-            mocha_timeout_ms: "2520000"
+            timeout_minutes: "35"
+            report_timeout_ms: "1800000"
+            mocha_timeout_ms: "1920000"
             poll_interval_ms: "5000"
           - slug: pixel-8
             device: Pixel 8
             version: "14"
             audio_mode: direct
             warm_runs: "5"
-            low_spec: "false"
             expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
-            timeout_minutes: "40"
-            report_timeout_ms: "2400000"
-            mocha_timeout_ms: "2520000"
+            timeout_minutes: "35"
+            report_timeout_ms: "1800000"
+            mocha_timeout_ms: "1920000"
             poll_interval_ms: "5000"
           - slug: xiaomi-redmi-note-8
             device: Xiaomi Redmi Note 8
             version: "10"
-            audio_mode: pager
-            warm_runs: "1"
-            low_spec: "true"
-            expected_models: kitten-tts-nano-0.8-int8
-            timeout_minutes: "40"
-            report_timeout_ms: "2400000"
-            mocha_timeout_ms: "2520000"
-            poll_interval_ms: "15000"
+            audio_mode: direct
+            warm_runs: "5"
+            expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
+            timeout_minutes: "35"
+            report_timeout_ms: "1800000"
+            mocha_timeout_ms: "1920000"
+            poll_interval_ms: "5000"
 
     steps:
       - uses: actions/checkout@v4
@@ -453,7 +448,6 @@ jobs:
           TESTMU_AUDIO_EXTRACTION_MODE: ${{ matrix.audio_mode }}
           TESTMU_EXPECTED_MODELS: ${{ matrix.expected_models }}
           TESTMU_EXPECTED_WARM_RUNS: ${{ matrix.warm_runs }}
-          TESTMU_LOW_SPEC_MODE: ${{ matrix.low_spec }}
           TESTMU_BENCHMARK_REPORT_TIMEOUT_MS: ${{ matrix.report_timeout_ms }}
           TESTMU_BENCHMARK_POLL_INTERVAL_MS: ${{ matrix.poll_interval_ms }}
           TESTMU_MOCHA_TIMEOUT_MS: ${{ matrix.mocha_timeout_ms }}

@@ -57,17 +57,6 @@ function parseBenchmarkJson(rawText) {
   return JSON.parse(rawText.slice(jsonStart, jsonEnd + 1));
 }
 
-function decodeXmlEntities(value) {
-  return String(value || "")
-    .replace(/&quot;/g, '"')
-    .replace(/&#34;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&");
-}
-
 function hasFinishedBenchmark(report) {
   return Boolean(report?.finishedAt);
 }
@@ -84,12 +73,6 @@ async function readBenchmarkReport(accessibilityId) {
     } catch {
       // Try the visible JSON block if the compact automation node has no value.
     }
-  }
-
-  try {
-    return parseBenchmarkJson(decodeXmlEntities(await browser.getPageSource()));
-  } catch {
-    // No JSON was visible in the current Android accessibility tree.
   }
 
   return null;
@@ -758,10 +741,7 @@ async function getPageSourceSummary() {
 }
 
 async function findBenchmarkRunButton() {
-  const automationId =
-    process.env.TESTMU_LOW_SPEC_MODE === "true"
-      ? "benchmark-low-spec-button"
-      : "benchmark-button";
+  const automationId = "benchmark-button";
   const button = await findElementByAutomationId(automationId);
   if (!button) {
     throw new Error(`Missing benchmark run button: ${automationId}`);
@@ -926,26 +906,6 @@ describe("KittenTTS Flutter benchmark", () => {
     }
 
     await benchmark.click();
-    if (isAndroidSession()) {
-      try {
-        console.log(
-          `[KittenTTS benchmark] Package after benchmark tap: ${await browser.getCurrentPackage()}`
-        );
-      } catch (error) {
-        console.warn(
-          `[KittenTTS benchmark] Could not read package after benchmark tap: ${error.message}`
-        );
-      }
-
-      const immediateReport = await getBenchmarkReportFromUi();
-      if (immediateReport) {
-        console.log(
-          `[KittenTTS benchmark] Immediate report status after tap: ${immediateReport.status || "unknown"}`
-        );
-      } else {
-        console.log("[KittenTTS benchmark] No immediate report after tap.");
-      }
-    }
 
     const report = await waitForBenchmarkReport(BENCHMARK_REPORT_TIMEOUT_MS);
 

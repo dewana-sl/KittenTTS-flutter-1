@@ -32,11 +32,6 @@ const _maxTokensPerChunk = int.fromEnvironment(
   defaultValue: 96,
 );
 const _modelIdsCsv = String.fromEnvironment('TESTMU_MODEL_IDS');
-const _lowSpecModelIdsCsv = String.fromEnvironment('TESTMU_LOW_SPEC_MODEL_IDS');
-const _lowSpecWarmRunCount = int.fromEnvironment(
-  'TESTMU_LOW_SPEC_WARM_RUNS',
-  defaultValue: 1,
-);
 const _audioSemanticsMode = String.fromEnvironment(
   'TESTMU_AUDIO_SEMANTICS_MODE',
   defaultValue: 'direct-and-pager',
@@ -48,12 +43,6 @@ final _benchmarkModelIds = _resolveBenchmarkModelIds();
 final _benchmarkWarmRunCount = _resolveWarmRunCount();
 final _defaultSampleText =
     Uri.base.queryParameters['benchmarkText'] ?? _compiledDefaultSampleText;
-final _lowSpecBenchmarkModelIds = _resolveBenchmarkModelIds(
-  _lowSpecModelIdsCsv.isEmpty
-      ? 'nano-int8,nano,micro,mini'
-      : _lowSpecModelIdsCsv,
-);
-final _lowSpecBenchmarkWarmRunCount = max(1, _lowSpecWarmRunCount);
 final _exposeDirectAudioChunks = _audioSemanticsMode != 'pager';
 final _benchmarkModelTimeout = _resolveBenchmarkModelTimeout();
 const List<OrtProvider>? _benchmarkOrtProviders = null;
@@ -585,25 +574,6 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
               child: FilledButton(
                 onPressed: _running ? null : () => _runBenchmark(),
                 child: Text(_running ? 'Running benchmark' : 'Run benchmark'),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Semantics(
-              label: 'benchmark-low-spec-button',
-              button: true,
-              enabled: !_running,
-              child: OutlinedButton(
-                onPressed: _running
-                    ? null
-                    : () => _runBenchmark(
-                        modelIds: _lowSpecBenchmarkModelIds,
-                        warmRunCount: _lowSpecBenchmarkWarmRunCount,
-                      ),
-                child: Text(
-                  _running
-                      ? 'Running low-spec benchmark'
-                      : 'Run low-spec benchmark',
-                ),
               ),
             ),
             const SizedBox(height: 12),
