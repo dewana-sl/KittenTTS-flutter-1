@@ -14,7 +14,9 @@ download_file() {
     return
   fi
   echo "Downloading $url"
-  curl --fail --location --retry 5 --retry-delay 2 --connect-timeout 20 \
+  curl --fail --location --retry 12 --retry-all-errors --retry-delay 5 \
+    --retry-max-time 600 --connect-timeout 30 --speed-limit 1024 \
+    --speed-time 60 \
     --output "$output.tmp" "$url"
   mv "$output.tmp" "$output"
 }

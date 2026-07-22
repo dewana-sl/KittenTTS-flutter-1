@@ -66,10 +66,35 @@ jobs:
         run: flutter test
         working-directory: benchmark/app
 
+  benchmark-model-assets:
+    name: Benchmark model assets
+    runs-on: ubuntu-latest
+    needs: sdk
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore benchmark model cache
+        uses: actions/cache@v5
+        with:
+          path: benchmark/app/assets/models
+          key: benchmark-flutter-models-v1-${{ hashFiles('benchmark/app/tool/download_benchmark_models.sh') }}
+          restore-keys: benchmark-flutter-models-v1-
+
+      - name: Download benchmark models
+        run: bash tool/download_benchmark_models.sh
+        working-directory: benchmark/app
+
+      - name: Upload benchmark model assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-flutter-model-assets
+          path: benchmark/app/assets/models
+
   android-package:
     name: Benchmark app Android APK
     runs-on: ubuntu-latest
-    needs: sdk
+    needs: benchmark-model-assets
     outputs:
       app_url: ${{ steps.upload-android-app.outputs.app_url }}
 
@@ -81,10 +106,15 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Download benchmark model assets
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-flutter-model-assets
+          path: benchmark/app/assets/models
+
       - name: Build release APK
         run: |
           set -euo pipefail
-          bash tool/download_benchmark_models.sh
           flutter pub get
           flutter build apk --release \
             --dart-define=TESTMU_MODEL_IDS=nano-int8,nano,micro,mini
@@ -156,7 +186,7 @@ jobs:
   ios-package:
     name: Benchmark app iOS unsigned IPA
     runs-on: macos-latest
-    needs: sdk
+    needs: benchmark-model-assets
     outputs:
       app_url: ${{ steps.upload-ios-app.outputs.app_url }}
 
@@ -175,10 +205,15 @@ jobs:
           fi
           pod --version
 
+      - name: Download benchmark model assets
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-flutter-model-assets
+          path: benchmark/app/assets/models
+
       - name: Build unsigned iOS app and package IPA
         run: |
           set -euo pipefail
-          bash tool/download_benchmark_models.sh
           flutter pub get
           flutter build ios --release --no-codesign
 
@@ -257,7 +292,7 @@ jobs:
   web-package:
     name: Benchmark app web build
     runs-on: ubuntu-latest
-    needs: sdk
+    needs: benchmark-model-assets
 
     steps:
       - uses: actions/checkout@v4
@@ -267,10 +302,15 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Download benchmark model assets
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-flutter-model-assets
+          path: benchmark/app/assets/models
+
       - name: Build web benchmark app
         run: |
           set -euo pipefail
-          bash tool/download_benchmark_models.sh
           flutter pub get
           flutter build web --release
           test -f build/web/index.html
