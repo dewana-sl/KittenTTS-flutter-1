@@ -344,7 +344,9 @@ jobs:
     name: TestMu iOS benchmark (${{ matrix.device }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    needs: ios-package
+    needs:
+      - ios-package
+      - testmu-android-benchmark
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -429,9 +431,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 100
     if: always() && !cancelled() && needs.android-package.result == 'success'
-    needs:
-      - android-package
-      - testmu-ios-benchmark
+    needs: android-package
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -552,6 +552,7 @@ jobs:
     needs:
       - web-package
       - testmu-android-benchmark
+      - testmu-ios-benchmark
     strategy:
       fail-fast: false
       max-parallel: 1
