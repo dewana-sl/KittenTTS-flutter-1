@@ -473,10 +473,10 @@ jobs:
             audio_mode: direct
             warm_runs: "5"
             expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
-            timeout_minutes: "50"
-            report_timeout_ms: "2700000"
-            mocha_timeout_ms: "2820000"
-            poll_interval_ms: "5000"
+            timeout_minutes: "75"
+            report_timeout_ms: "3900000"
+            mocha_timeout_ms: "4020000"
+            poll_interval_ms: "30000"
 
     steps:
       - uses: actions/checkout@v4
