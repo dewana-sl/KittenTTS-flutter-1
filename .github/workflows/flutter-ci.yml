@@ -344,6 +344,7 @@ jobs:
     name: TestMu iOS benchmark (${{ matrix.device }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    if: always() && !cancelled() && needs.ios-package.result == 'success'
     needs:
       - ios-package
       - testmu-android-benchmark
@@ -441,11 +442,11 @@ jobs:
             device: Xiaomi Redmi Note 8
             version: "10"
             audio_mode: direct
-            warm_runs: "5"
+            warm_runs: "3"
             expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
-            timeout_minutes: "75"
-            report_timeout_ms: "3900000"
-            mocha_timeout_ms: "4020000"
+            timeout_minutes: "60"
+            report_timeout_ms: "3300000"
+            mocha_timeout_ms: "3420000"
             poll_interval_ms: "30000"
           - slug: pixel-5
             device: Pixel 5
