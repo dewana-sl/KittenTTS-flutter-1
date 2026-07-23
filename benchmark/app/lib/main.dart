@@ -576,6 +576,18 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
                 child: Text(_running ? 'Running benchmark' : 'Run benchmark'),
               ),
             ),
+            const SizedBox(height: 8),
+            Semantics(
+              label: 'benchmark-button-low-spec',
+              button: true,
+              enabled: !_running,
+              child: OutlinedButton(
+                onPressed: _running
+                    ? null
+                    : () => _runBenchmark(warmRunCount: 1),
+                child: const Text('Run low-spec benchmark'),
+              ),
+            ),
             const SizedBox(height: 12),
             Semantics(
               label: 'status-label',

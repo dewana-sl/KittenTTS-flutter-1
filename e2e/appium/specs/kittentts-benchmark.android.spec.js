@@ -21,6 +21,8 @@ const BENCHMARK_REPORT_TIMEOUT_MS = Number(
 const BENCHMARK_POLL_INTERVAL_MS = Number(
   process.env.TESTMU_BENCHMARK_POLL_INTERVAL_MS || 5000
 );
+const BENCHMARK_BUTTON_ID =
+  process.env.TESTMU_BENCHMARK_BUTTON_ID || "benchmark-button";
 const APP_READY_TIMEOUT_MS = Number(
   process.env.TESTMU_APP_READY_TIMEOUT_MS || 6 * 60 * 1000
 );
@@ -741,7 +743,7 @@ async function getPageSourceSummary() {
 }
 
 async function findBenchmarkRunButton() {
-  const automationId = "benchmark-button";
+  const automationId = BENCHMARK_BUTTON_ID;
   const button = await findElementByAutomationId(automationId);
   if (!button) {
     throw new Error(`Missing benchmark run button: ${automationId}`);
@@ -818,7 +820,7 @@ async function waitForAppReady(timeoutMs) {
       console.log(`[KittenTTS app status] ${statusLabel}`);
     }
 
-    const benchmark = await findElementByAutomationId("benchmark-button");
+    const benchmark = await findElementByAutomationId(BENCHMARK_BUTTON_ID);
     if (
       benchmark &&
       (await benchmark.isEnabled().catch(() => false))
