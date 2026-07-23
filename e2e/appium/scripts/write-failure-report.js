@@ -220,6 +220,7 @@ function main() {
     webUrl: process.env.TESTMU_WEB_URL || null,
     tunnelName: process.env.TESTMU_TUNNEL_NAME || null,
     realDevice: process.env.TESTMU_REAL_DEVICE !== "false",
+    allowedFailure: process.env.TESTMU_ALLOW_FAILURE === "true",
     sessionId: null,
     githubRunId: process.env.GITHUB_RUN_ID || null,
     githubSha: process.env.TESTMU_GITHUB_SHA || process.env.GITHUB_SHA || null,
