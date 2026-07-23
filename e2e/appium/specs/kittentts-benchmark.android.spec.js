@@ -562,8 +562,19 @@ function markPartialReport(report, timeoutMessage) {
       };
     }
 
-    if (row.status !== "failed") {
+    if (row.status === "passed") {
       return row;
+    }
+
+    if (row.status !== "failed") {
+      return {
+        ...row,
+        status: "failed",
+        failedStage: row.failedStage || "Benchmark timeout",
+        errorSummary:
+          row.errorSummary ||
+          `Model was still ${row.status || "running"} when the device session ended. ${timeoutMessage}`,
+      };
     }
 
     const summary = String(row.errorSummary || "");
