@@ -39,11 +39,7 @@ const _audioSemanticsMode = String.fromEnvironment(
 const _voice = 'bella';
 const _speed = 1.0;
 const _audioChunkSize = 64000;
-const _lowSpecBenchmarkModelIds = <KittenTTSModelId>[
-  'nano-int8',
-  'nano',
-  'micro',
-];
+const _lowSpecBenchmarkModelIds = <KittenTTSModelId>['nano-int8', 'nano'];
 final _benchmarkModelIds = _resolveBenchmarkModelIds();
 final _benchmarkWarmRunCount = _resolveWarmRunCount();
 final _defaultSampleText =

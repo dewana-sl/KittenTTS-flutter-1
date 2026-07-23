@@ -21,6 +21,7 @@ const BENCHMARK_REPORT_TIMEOUT_MS = Number(
 const BENCHMARK_POLL_INTERVAL_MS = Number(
   process.env.TESTMU_BENCHMARK_POLL_INTERVAL_MS || 5000
 );
+const REQUIRE_WER_AUDIO = process.env.TESTMU_REQUIRE_WER_AUDIO === "true";
 const BENCHMARK_BUTTON_ID =
   process.env.TESTMU_BENCHMARK_BUTTON_ID || "benchmark-button";
 const APP_READY_TIMEOUT_MS = Number(
@@ -847,7 +848,10 @@ async function waitForBenchmarkReport(timeoutMs) {
     if (report) {
       lastReport = report;
       if (hasFinishedBenchmark(report)) {
-        return (await getBenchmarkReportFromUi({ includeAudio: true })) || report;
+        return (
+          (await getBenchmarkReportFromUi({ includeAudio: REQUIRE_WER_AUDIO })) ||
+          report
+        );
       }
     }
 
@@ -957,7 +961,7 @@ describe("KittenTTS Flutter benchmark", () => {
             `Invalid sample hash for ${expectedModel}: ${row.sampleHash}`
           );
         }
-        if (process.env.TESTMU_REQUIRE_WER_AUDIO === "true") {
+        if (REQUIRE_WER_AUDIO) {
           expect(row.werReferenceText).toBe(report.sampleText);
           expect(row.werAudioFormat).toBe("wav-base64");
           expect(row.werAudioSampleRate).toBe(24000);
