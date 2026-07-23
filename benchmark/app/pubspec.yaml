@@ -12,6 +12,8 @@ dependencies:
     sdk: flutter
   kittentts_flutter:
     path: ../..
+  path: ^1.9.1
+  path_provider: ^2.1.5
 
 dev_dependencies:
   flutter_test:
@@ -20,3 +22,10 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/cephonemizer/en_rules
+    - assets/cephonemizer/en_list
+    - assets/models/kitten-tts-nano-0.8/
+    - assets/models/kitten-tts-nano-0.8-int8/
+    - assets/models/kitten-tts-micro-0.8/
+    - assets/models/kitten-tts-mini-0.8/

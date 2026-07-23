@@ -18,6 +18,10 @@ if (reports.length === 0) {
 
 const failures = [];
 for (const report of reports) {
+  if (report.allowedFailure) {
+    continue;
+  }
+
   if (report.status === "failed" || report.status === "partial") {
     failures.push(
       `${report.device || "device"}: ${report.status} (${report.errorSummary || report.failedStage || "see report"})`

@@ -58,6 +58,12 @@ function hasFinishedBenchmark(report) {
   return Boolean(report?.finishedAt);
 }
 
+function isLostSessionError(error) {
+  return /Unable to find the session info|session has quit already|session has.*timed out|invalid session id|Session deleted/i.test(
+    String(error?.message || error || "")
+  );
+}
+
 async function readElementText(testId) {
   const element = await findByTestId(testId);
   const directText = await element.getText().catch(() => "");
@@ -88,7 +94,12 @@ async function readBenchmarkReport(testId) {
       }
       return "";
     })
-    .catch(() => null);
+    .catch((error) => {
+      if (isLostSessionError(error)) {
+        throw error;
+      }
+      return null;
+    });
 
   if (globalReportJson) {
     return JSON.parse(globalReportJson);
@@ -97,12 +108,27 @@ async function readBenchmarkReport(testId) {
   try {
     const reportText = await readElementText(testId);
     return parseBenchmarkJson(reportText);
-  } catch {
+  } catch (error) {
+    if (isLostSessionError(error)) {
+      throw error;
+    }
     return null;
   }
 }
 
 async function attachWerAudioChunksDirect(report) {
+  const bridgedChunks = await browser
+    .execute(() => {
+      if (
+        typeof globalThis.__KITTEN_GET_BENCHMARK_AUDIO_CHUNKS_JSON__ ===
+        "function"
+      ) {
+        return globalThis.__KITTEN_GET_BENCHMARK_AUDIO_CHUNKS_JSON__();
+      }
+      return "";
+    })
+    .then((payload) => (payload ? JSON.parse(payload) : {}))
+    .catch(() => ({}));
   const rows = [];
 
   for (const row of report.rows || []) {
@@ -121,7 +147,7 @@ async function attachWerAudioChunksDirect(report) {
     const chunks = [];
     for (let index = 0; index < chunkCount; index += 1) {
       const testId = `benchmark-audio-${rowSlug}-${index}`;
-      const chunk = await readElementText(testId);
+      const chunk = bridgedChunks[testId] || (await readElementText(testId));
       if (!chunk) {
         throw new Error(
           `Missing WER audio chunk ${index + 1}/${chunkCount} for ${
@@ -170,19 +196,14 @@ function markPartialReport(report, timeoutMessage) {
     status: "partial",
     finishedAt: report.finishedAt || null,
     rows: (report.rows || []).map((row) => {
-      if (row.status !== "failed") {
+      if (row.status === "passed") {
         return row;
       }
 
       const summary = String(row.errorSummary || "");
-      if (
-        !/did not run|did not finish|in progress|session ended/i.test(summary)
-      ) {
-        return row;
-      }
-
       return {
         ...row,
+        status: "failed",
         failedStage: row.failedStage || "Benchmark timeout",
         errorSummary: `${summary} ${timeoutMessage}`.trim(),
       };
@@ -263,7 +284,7 @@ function writeDeviceReport(report, startedAtMs) {
     realDevice: process.env.TESTMU_REAL_DEVICE !== "false",
     sessionId: browser.sessionId,
     githubRunId: process.env.GITHUB_RUN_ID || null,
-    githubSha: process.env.GITHUB_SHA || null,
+    githubSha: process.env.TESTMU_GITHUB_SHA || process.env.GITHUB_SHA || null,
     deviceStartedAt: new Date(startedAtMs).toISOString(),
     deviceFinishedAt: new Date(finishedAtMs).toISOString(),
     totalRuntimeMs: finishedAtMs - startedAtMs,
@@ -351,7 +372,18 @@ async function waitForBenchmarkReport(timeoutMs) {
   let lastReport = null;
 
   while (Date.now() - startedAt < timeoutMs) {
-    const report = await getBenchmarkReportFromUi();
+    let report = null;
+    try {
+      report = await getBenchmarkReportFromUi();
+    } catch (error) {
+      if (isLostSessionError(error) && lastReport) {
+        return markPartialReport(
+          lastReport,
+          `Browser session ended before the benchmark finished: ${error.message}`
+        );
+      }
+      throw error;
+    }
     if (report) {
       lastReport = report;
       if (hasFinishedBenchmark(report)) {

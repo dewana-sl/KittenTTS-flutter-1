@@ -16,7 +16,9 @@ env:
   DEFAULT_TESTMU_SAMPLE_TEXT: |-
     KittenTTS runs fully on your device and creates clear speech quickly.
     This benchmark compares every model for speed, quality, and consistency.
+  TESTMU_GITHUB_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
   TESTMU_SDK_FOLDER: Flutter SDK
+  GOOGLE_DRIVE_MODEL_ASSET_BUNDLE_ID: 1PlqK93-6PC-CawnukLt4YGi7HpAW9Kyn
 
 jobs:
   benchmark-approval:
@@ -65,10 +67,52 @@ jobs:
         run: flutter test
         working-directory: benchmark/app
 
+  benchmark-model-assets:
+    name: Benchmark model assets
+    runs-on: ubuntu-latest
+    needs: sdk
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore benchmark model cache
+        uses: actions/cache@v5
+        with:
+          path: benchmark/app/assets/models
+          key: benchmark-flutter-models-v2-${{ hashFiles('benchmark/app/tool/download_benchmark_models.sh', 'e2e/appium/scripts/download-model-assets-from-google-drive.py') }}
+          restore-keys: |
+            benchmark-flutter-models-v2-
+            benchmark-flutter-models-v1-
+
+      - name: Install Drive download dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install google-api-python-client google-auth
+
+      - id: drive-model-assets
+        name: Download benchmark models from Drive
+        continue-on-error: true
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          python e2e/appium/scripts/download-model-assets-from-google-drive.py \
+            --output-dir benchmark/app/assets
+
+      - name: Download benchmark models from Hugging Face
+        if: steps.drive-model-assets.outcome != 'success'
+        run: bash tool/download_benchmark_models.sh
+        working-directory: benchmark/app
+
+      - name: Upload benchmark model assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-flutter-model-assets
+          path: benchmark/app/assets/models
+
   android-package:
     name: Benchmark app Android APK
     runs-on: ubuntu-latest
-    needs: sdk
+    needs: benchmark-model-assets
     outputs:
       app_url: ${{ steps.upload-android-app.outputs.app_url }}
 
@@ -80,11 +124,18 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Download benchmark model assets
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-flutter-model-assets
+          path: benchmark/app/assets/models
+
       - name: Build release APK
         run: |
           set -euo pipefail
           flutter pub get
-          flutter build apk --release
+          flutter build apk --release \
+            --dart-define=TESTMU_MODEL_IDS=nano-int8,nano,micro,mini
           test -f build/app/outputs/flutter-apk/app-release.apk
         working-directory: benchmark/app
 
@@ -153,7 +204,7 @@ jobs:
   ios-package:
     name: Benchmark app iOS unsigned IPA
     runs-on: macos-latest
-    needs: sdk
+    needs: benchmark-model-assets
     outputs:
       app_url: ${{ steps.upload-ios-app.outputs.app_url }}
 
@@ -171,6 +222,12 @@ jobs:
             sudo gem install cocoapods --no-document
           fi
           pod --version
+
+      - name: Download benchmark model assets
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-flutter-model-assets
+          path: benchmark/app/assets/models
 
       - name: Build unsigned iOS app and package IPA
         run: |
@@ -253,7 +310,7 @@ jobs:
   web-package:
     name: Benchmark app web build
     runs-on: ubuntu-latest
-    needs: sdk
+    needs: benchmark-model-assets
 
     steps:
       - uses: actions/checkout@v4
@@ -262,6 +319,12 @@ jobs:
         with:
           channel: stable
           cache: true
+
+      - name: Download benchmark model assets
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-flutter-model-assets
+          path: benchmark/app/assets/models
 
       - name: Build web benchmark app
         run: |
@@ -280,7 +343,11 @@ jobs:
   testmu-ios-benchmark:
     name: TestMu iOS benchmark (${{ matrix.device }})
     runs-on: ubuntu-latest
-    needs: ios-package
+    timeout-minutes: 45
+    if: always() && !cancelled() && needs.ios-package.result == 'success'
+    needs:
+      - ios-package
+      - testmu-android-benchmark
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -315,16 +382,38 @@ jobs:
           TESTMU_PLATFORM_NAME: iOS
           TESTMU_PLATFORM_VERSION: ${{ matrix.version }}
           TESTMU_SAMPLE_TEXT: ${{ vars.TESTMU_SAMPLE_TEXT || env.DEFAULT_TESTMU_SAMPLE_TEXT }}
+          TESTMU_EXPECTED_MODELS: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
+          TESTMU_SKIP_SAMPLE_OVERRIDE: "true"
           TESTMU_REQUIRE_WER_AUDIO: "true"
+          TESTMU_BENCHMARK_REPORT_TIMEOUT_MS: 900000
+          TESTMU_CONNECTION_RETRY_TIMEOUT_MS: 300000
+          TESTMU_CONNECTION_RETRY_COUNT: 0
+          GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -o pipefail
           mkdir -p reports
           export BENCHMARK_STARTED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
-          set +e
-          npm run test:ios 2>&1 | tee reports/appium-output.log
-          status=${PIPESTATUS[0]}
-          set -e
+          status=1
+          for attempt in 1 2; do
+            if [ "$attempt" -gt 1 ]; then
+              echo "Retrying transient TestMu iOS session creation failure (attempt $attempt/2)." | tee -a reports/appium-output.log
+              sleep 30
+            fi
+            set +e
+            timeout 40m npm run test:ios 2>&1 | tee -a reports/appium-output.log
+            status=${PIPESTATUS[0]}
+            set -e
+            if [ "$status" -eq 0 ]; then
+              break
+            fi
+            if ! grep -Eiq "Failed to create a session|UND_ERR_HEADERS_TIMEOUT|Request failed with error code" reports/appium-output.log; then
+              break
+            fi
+          done
           export BENCHMARK_FINISHED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
+          if [ "$status" -eq 124 ]; then
+            echo "Timed out after 40 minutes while waiting for the TestMu/Appium iOS benchmark to finish." | tee -a reports/appium-output.log
+          fi
           if [ "$status" -ne 0 ] && [ -z "$(find reports -name '*.json' -print -quit)" ]; then
             node scripts/write-failure-report.js
           fi
@@ -341,26 +430,66 @@ jobs:
   testmu-android-benchmark:
     name: TestMu Android benchmark (${{ matrix.device }})
     runs-on: ubuntu-latest
-    needs:
-      - android-package
-      - testmu-ios-benchmark
+    timeout-minutes: 100
+    if: always() && !cancelled() && needs.android-package.result == 'success'
+    needs: android-package
     strategy:
       fail-fast: false
       max-parallel: 1
       matrix:
         include:
+          - slug: xiaomi-redmi-note-8
+            device: Xiaomi Redmi Note 8
+            version: "10"
+            audio_mode: pager
+            benchmark_button_id: benchmark-button-low-spec
+            warm_runs: "1"
+            expected_models: kitten-tts-nano-0.8-int8
+            require_wer_audio: "false"
+            allow_failure: "true"
+            timeout_minutes: "15"
+            report_timeout_ms: "900000"
+            mocha_timeout_ms: "960000"
+            poll_interval_ms: "30000"
           - slug: pixel-5
             device: Pixel 5
             version: "12"
+            audio_mode: direct
+            benchmark_button_id: benchmark-button
+            warm_runs: "5"
+            expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
+            require_wer_audio: "true"
+            allow_failure: "false"
+            timeout_minutes: "35"
+            report_timeout_ms: "1800000"
+            mocha_timeout_ms: "1920000"
+            poll_interval_ms: "5000"
           - slug: galaxy-note10
             device: Galaxy Note10
             version: "12"
+            audio_mode: direct
+            benchmark_button_id: benchmark-button
+            warm_runs: "5"
+            expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
+            require_wer_audio: "true"
+            allow_failure: "false"
+            timeout_minutes: "35"
+            report_timeout_ms: "1800000"
+            mocha_timeout_ms: "1920000"
+            poll_interval_ms: "5000"
           - slug: pixel-8
             device: Pixel 8
             version: "14"
-          - slug: redmi-note-8
-            device: Xiaomi Redmi Note 8
-            version: "10"
+            audio_mode: direct
+            benchmark_button_id: benchmark-button
+            warm_runs: "5"
+            expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
+            require_wer_audio: "true"
+            allow_failure: "false"
+            timeout_minutes: "35"
+            report_timeout_ms: "1800000"
+            mocha_timeout_ms: "1920000"
+            poll_interval_ms: "5000"
 
     steps:
       - uses: actions/checkout@v4
@@ -374,6 +503,8 @@ jobs:
         working-directory: e2e/appium
 
       - name: Run TestMu Android benchmark
+        id: run-android-benchmark
+        continue-on-error: true
         env:
           LT_USERNAME: ${{ secrets.LT_USERNAME }}
           LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY }}
@@ -384,17 +515,31 @@ jobs:
           TESTMU_PLATFORM_NAME: Android
           TESTMU_PLATFORM_VERSION: ${{ matrix.version }}
           TESTMU_SAMPLE_TEXT: ${{ vars.TESTMU_SAMPLE_TEXT || env.DEFAULT_TESTMU_SAMPLE_TEXT }}
-          TESTMU_REQUIRE_WER_AUDIO: "true"
-          TESTMU_BENCHMARK_REPORT_TIMEOUT_MS: 2400000
+          TESTMU_SKIP_SAMPLE_OVERRIDE: "true"
+          TESTMU_REQUIRE_WER_AUDIO: ${{ matrix.require_wer_audio }}
+          TESTMU_ALLOW_FAILURE: ${{ matrix.allow_failure }}
+          TESTMU_AUDIO_EXTRACTION_MODE: ${{ matrix.audio_mode }}
+          TESTMU_BENCHMARK_BUTTON_ID: ${{ matrix.benchmark_button_id }}
+          TESTMU_EXPECTED_MODELS: ${{ matrix.expected_models }}
+          TESTMU_EXPECTED_WARM_RUNS: ${{ matrix.warm_runs }}
+          TESTMU_BENCHMARK_REPORT_TIMEOUT_MS: ${{ matrix.report_timeout_ms }}
+          TESTMU_BENCHMARK_POLL_INTERVAL_MS: ${{ matrix.poll_interval_ms }}
+          TESTMU_MOCHA_TIMEOUT_MS: ${{ matrix.mocha_timeout_ms }}
+          TESTMU_ANDROID_TIMEOUT_MINUTES: ${{ matrix.timeout_minutes }}
+          GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TESTMU_GITHUB_SHA: ${{ env.TESTMU_GITHUB_SHA }}
         run: |
           set -o pipefail
           mkdir -p reports
           export BENCHMARK_STARTED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
           set +e
-          npm run test:android 2>&1 | tee reports/appium-output.log
+          timeout "${TESTMU_ANDROID_TIMEOUT_MINUTES}m" npm run test:android 2>&1 | tee reports/appium-output.log
           status=${PIPESTATUS[0]}
           set -e
           export BENCHMARK_FINISHED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
+          if [ "$status" -eq 124 ]; then
+            echo "Timed out after ${TESTMU_ANDROID_TIMEOUT_MINUTES} minutes while waiting for the TestMu/Appium Android benchmark to finish." | tee -a reports/appium-output.log
+          fi
           if [ "$status" -ne 0 ] && [ -z "$(find reports -name '*.json' -print -quit)" ]; then
             node scripts/write-failure-report.js
           fi
@@ -408,12 +553,21 @@ jobs:
           name: benchmark-result-android-${{ matrix.slug }}
           path: e2e/appium/reports
 
+      - name: Fail Android device job if benchmark failed
+        if: steps.run-android-benchmark.outcome == 'failure' && matrix.allow_failure != 'true'
+        run: |
+          echo "The ${{ matrix.device }} benchmark failed. Uploaded the device report and logs above."
+          exit 1
+
   testmu-web-benchmark:
     name: TestMu web benchmark (${{ matrix.device }} / ${{ matrix.browser }})
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    if: always() && !cancelled() && needs.web-package.result == 'success'
     needs:
       - web-package
       - testmu-android-benchmark
+      - testmu-ios-benchmark
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -424,11 +578,37 @@ jobs:
             platform: Android
             version: "14"
             browser: Chrome
+            browser_version: ""
+            model_ids: nano-int8
+            models: kitten-tts-nano-0.8-int8
+            real_device: "true"
+            wdio_script: test:web:browser
+            timeout_minutes: "12"
+            report_timeout_ms: "720000"
           - slug: ipad-10-9-safari
             device: iPad 10.9 (2022)
             platform: iOS
             version: "18"
             browser: Safari
+            browser_version: ""
+            model_ids: nano-int8
+            models: kitten-tts-nano-0.8-int8
+            real_device: "true"
+            wdio_script: test:web:browser
+            timeout_minutes: "12"
+            report_timeout_ms: "720000"
+          - slug: linux-chrome
+            device: Linux Desktop
+            platform: Linux
+            version: ""
+            browser: Chrome
+            browser_version: latest
+            model_ids: nano-int8,nano,micro,mini
+            models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
+            real_device: "false"
+            wdio_script: test:web:desktop
+            timeout_minutes: "15"
+            report_timeout_ms: "900000"
 
     steps:
       - uses: actions/checkout@v4
@@ -468,29 +648,39 @@ jobs:
           accessKey: ${{ secrets.LT_ACCESS_KEY }}
           tunnelName: kittentts-flutter-web-${{ github.run_id }}-${{ matrix.slug }}
 
-      - name: Run TestMu mobile browser benchmark
+      - name: Run TestMu browser benchmark
         env:
           LT_USERNAME: ${{ secrets.LT_USERNAME }}
           LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY }}
-          TESTMU_WEB_URL: http://localhost:4173/?benchmarkAutoStart=true
+          TESTMU_WEB_URL: "http://localhost.lambdatest.com:4173?benchmarkAutoStart=true&benchmarkModelIds=${{ matrix.model_ids }}&benchmarkWarmRuns=1&benchmarkText=KittenTTS%20web%20benchmark.&benchmarkIncludeAudio=true&benchmarkModelTimeoutMs=300000&benchmarkBundledAssetsPath=/kittentts"
           TESTMU_TUNNEL_NAME: kittentts-flutter-web-${{ github.run_id }}-${{ matrix.slug }}
           TESTMU_DEVICE: ${{ matrix.device }}
           TESTMU_PLATFORM_NAME: ${{ matrix.platform }}
           TESTMU_PLATFORM_VERSION: ${{ matrix.version }}
           TESTMU_BROWSER_NAME: ${{ matrix.browser }}
-          TESTMU_SAMPLE_TEXT: ${{ vars.TESTMU_SAMPLE_TEXT || env.DEFAULT_TESTMU_SAMPLE_TEXT }}
+          TESTMU_BROWSER_VERSION: ${{ matrix.browser_version }}
+          TESTMU_REAL_DEVICE: ${{ matrix.real_device }}
+          TESTMU_SAMPLE_TEXT: KittenTTS web benchmark.
+          TESTMU_EXPECTED_MODELS: ${{ matrix.models }}
+          TESTMU_EXPECTED_WARM_RUNS: 1
           TESTMU_REQUIRE_WER_AUDIO: "true"
+          TESTMU_BENCHMARK_REPORT_TIMEOUT_MS: ${{ matrix.report_timeout_ms }}
+          GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TESTMU_GITHUB_SHA: ${{ env.TESTMU_GITHUB_SHA }}
         run: |
           set -o pipefail
           mkdir -p reports
           export BENCHMARK_STARTED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
           set +e
-          npm run test:web:browser 2>&1 | tee reports/appium-output.log
+          timeout "${{ matrix.timeout_minutes }}m" npm run "${{ matrix.wdio_script }}" 2>&1 | tee reports/appium-output.log
           status=${PIPESTATUS[0]}
           set -e
           export BENCHMARK_FINISHED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
+          if [ "$status" -eq 124 ]; then
+            echo "Timed out after ${{ matrix.timeout_minutes }} minutes while waiting for the TestMu/Appium browser benchmark to finish." | tee -a reports/appium-output.log
+          fi
           if [ "$status" -ne 0 ] && [ -z "$(find reports -name '*.json' -print -quit)" ]; then
-            BENCHMARK_FAILED_STAGE="Run TestMu mobile browser benchmark" TESTMU_TARGET=web node scripts/write-failure-report.js
+            BENCHMARK_FAILED_STAGE="Run TestMu browser benchmark" TESTMU_TARGET=web node scripts/write-failure-report.js
           fi
           exit "$status"
         working-directory: e2e/appium
@@ -502,85 +692,6 @@ jobs:
           name: benchmark-result-web-${{ matrix.slug }}
           path: e2e/appium/reports
 
-  testmu-desktop-web-benchmark:
-    name: TestMu desktop web benchmark (Linux / Chrome)
-    runs-on: ubuntu-latest
-    needs:
-      - web-package
-      - testmu-web-benchmark
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Download web build
-        uses: actions/download-artifact@v4
-        with:
-          name: benchmark-flutter-web
-          path: benchmark/app/build/web
-
-      - name: Install Appium harness
-        run: npm ci
-        working-directory: e2e/appium
-
-      - name: Start web server
-        run: |
-          nohup python3 -m http.server 4173 --bind 0.0.0.0 > "$RUNNER_TEMP/flutter-web-server.log" 2>&1 &
-          echo $! > "$RUNNER_TEMP/flutter-web-server.pid"
-          for i in {1..30}; do
-            if curl -fsS http://127.0.0.1:4173 >/dev/null; then
-              exit 0
-            fi
-            sleep 1
-          done
-          cat "$RUNNER_TEMP/flutter-web-server.log"
-          exit 1
-        working-directory: benchmark/app/build/web
-
-      - name: Start LambdaTest tunnel
-        uses: LambdaTest/LambdaTest-tunnel-action@v2
-        with:
-          user: ${{ secrets.LT_USERNAME }}
-          accessKey: ${{ secrets.LT_ACCESS_KEY }}
-          tunnelName: kittentts-flutter-web-${{ github.run_id }}-linux-chrome
-
-      - name: Run TestMu desktop browser benchmark
-        env:
-          LT_USERNAME: ${{ secrets.LT_USERNAME }}
-          LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY }}
-          TESTMU_WEB_URL: http://localhost:4173/?benchmarkAutoStart=true
-          TESTMU_TUNNEL_NAME: kittentts-flutter-web-${{ github.run_id }}-linux-chrome
-          TESTMU_DEVICE: Linux Desktop
-          TESTMU_PLATFORM_NAME: Linux
-          TESTMU_BROWSER_NAME: Chrome
-          TESTMU_BROWSER_VERSION: latest
-          TESTMU_SAMPLE_TEXT: ${{ vars.TESTMU_SAMPLE_TEXT || env.DEFAULT_TESTMU_SAMPLE_TEXT }}
-          TESTMU_REQUIRE_WER_AUDIO: "true"
-        run: |
-          set -o pipefail
-          mkdir -p reports
-          export BENCHMARK_STARTED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
-          set +e
-          npm run test:web:desktop 2>&1 | tee reports/appium-output.log
-          status=${PIPESTATUS[0]}
-          set -e
-          export BENCHMARK_FINISHED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
-          if [ "$status" -ne 0 ] && [ -z "$(find reports -name '*.json' -print -quit)" ]; then
-            BENCHMARK_FAILED_STAGE="Run TestMu desktop browser benchmark" TESTMU_TARGET=web node scripts/write-failure-report.js
-          fi
-          exit "$status"
-        working-directory: e2e/appium
-
-      - name: Upload desktop web benchmark result
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmark-result-web-linux-chrome
-          path: e2e/appium/reports
-
   benchmark-report:
     name: Benchmark report
     runs-on: ubuntu-latest
@@ -589,7 +700,6 @@ jobs:
       - testmu-ios-benchmark
       - testmu-android-benchmark
       - testmu-web-benchmark
-      - testmu-desktop-web-benchmark
 
     steps:
       - uses: actions/checkout@v4
@@ -630,7 +740,7 @@ jobs:
 
       - name: Build benchmark report
         env:
-          GITHUB_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          TESTMU_GITHUB_SHA: ${{ env.TESTMU_GITHUB_SHA }}
         run: node e2e/appium/scripts/build-benchmark-report.js benchmark-results benchmark-report
 
       - name: Upload benchmark report

@@ -1,18 +1,34 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const EXPECTED_MODELS = [
+const DEFAULT_EXPECTED_MODELS = [
   "kitten-tts-nano-0.8",
   "kitten-tts-nano-0.8-int8",
   "kitten-tts-micro-0.8",
   "kitten-tts-mini-0.8",
 ];
+const EXPECTED_MODELS = resolveExpectedModels();
+const EXPECTED_WARM_RUNS = Number(process.env.TESTMU_EXPECTED_WARM_RUNS || 5);
+const EXPECTED_MODEL_DISPLAY_NAMES = new Map([
+  ["kitten-tts-nano-0.8", "Nano (fp32)"],
+  ["kitten-tts-nano-0.8-int8", "Nano (int8)"],
+  ["kitten-tts-micro-0.8", "Micro"],
+  ["kitten-tts-mini-0.8", "Mini"],
+]);
 const BENCHMARK_REPORT_TIMEOUT_MS = Number(
   process.env.TESTMU_BENCHMARK_REPORT_TIMEOUT_MS || 30 * 60 * 1000
 );
+const BENCHMARK_POLL_INTERVAL_MS = Number(
+  process.env.TESTMU_BENCHMARK_POLL_INTERVAL_MS || 5000
+);
+const REQUIRE_WER_AUDIO = process.env.TESTMU_REQUIRE_WER_AUDIO === "true";
+const BENCHMARK_BUTTON_ID =
+  process.env.TESTMU_BENCHMARK_BUTTON_ID || "benchmark-button";
 const APP_READY_TIMEOUT_MS = Number(
   process.env.TESTMU_APP_READY_TIMEOUT_MS || 6 * 60 * 1000
 );
+const ANDROID_APP_PACKAGE =
+  process.env.TESTMU_ANDROID_APP_PACKAGE || "com.kittenml.app";
 
 function slugify(value) {
   return String(value || "device")
@@ -23,6 +39,14 @@ function slugify(value) {
 
 function automationSlug(value) {
   return slugify(value);
+}
+
+function resolveExpectedModels() {
+  const requested = String(process.env.TESTMU_EXPECTED_MODELS || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return requested.length > 0 ? requested : DEFAULT_EXPECTED_MODELS;
 }
 
 function parseBenchmarkJson(rawText) {
@@ -40,13 +64,21 @@ function hasFinishedBenchmark(report) {
   return Boolean(report?.finishedAt);
 }
 
+function expectedModelDisplayName(model) {
+  return EXPECTED_MODEL_DISPLAY_NAMES.get(model) || model;
+}
+
 async function readBenchmarkReport(accessibilityId) {
-  try {
-    const reportText = await $(`~${accessibilityId}`).getText();
-    return parseBenchmarkJson(reportText);
-  } catch {
-    return null;
+  for (const candidateId of [accessibilityId, "benchmark-json-visible"]) {
+    try {
+      const reportText = await readElementText(candidateId);
+      return parseBenchmarkJson(reportText);
+    } catch {
+      // Try the visible JSON block if the compact automation node has no value.
+    }
   }
+
+  return null;
 }
 
 function isIosSession() {
@@ -59,13 +91,184 @@ function isIosSession() {
   );
 }
 
+function isAndroidSession() {
+  return /android/i.test(
+    String(
+      browser?.capabilities?.platformName ||
+        browser?.requestedCapabilities?.platformName ||
+        getPlatformName()
+    )
+  );
+}
+
+function androidUiSelectorText(value) {
+  return String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function regexEscape(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function androidSemanticsLabelRegex(accessibilityId) {
+  return `(?s)(^|.*, )${regexEscape(accessibilityId)}($|[,\\n].*)`;
+}
+
+function automationSelectors(accessibilityId) {
+  const selectors = [`~${accessibilityId}`];
+  if (isAndroidSession()) {
+    selectors.push(
+      `android=new UiSelector().descriptionStartsWith("${androidUiSelectorText(
+        `${accessibilityId}:`
+      )}")`,
+      `android=new UiSelector().descriptionMatches("${androidUiSelectorText(
+        androidSemanticsLabelRegex(accessibilityId)
+      )}")`
+    );
+  }
+  return selectors;
+}
+
+async function findElementByAutomationId(accessibilityId) {
+  for (const selector of automationSelectors(accessibilityId)) {
+    try {
+      const element = await $(selector);
+      if (await element.isDisplayed()) {
+        return element;
+      }
+    } catch {
+      // Try the platform fallback selector next.
+    }
+  }
+
+  return null;
+}
+
+async function findReadableElementByAutomationId(accessibilityId) {
+  for (const selector of automationSelectors(accessibilityId)) {
+    try {
+      const element = await $(selector);
+      if (element?.elementId) {
+        return element;
+      }
+    } catch {
+      // Try the platform fallback selector next.
+    }
+  }
+
+  return null;
+}
+
+async function activateAndroidBenchmarkApp() {
+  if (!isAndroidSession() || typeof browser.activateApp !== "function") {
+    return;
+  }
+
+  try {
+    await browser.activateApp(ANDROID_APP_PACKAGE);
+  } catch (error) {
+    console.warn(
+      `[KittenTTS benchmark] Could not activate ${ANDROID_APP_PACKAGE}: ${error.message}`
+    );
+  }
+}
+
+async function dismissAndroidSystemDialog() {
+  if (!isAndroidSession()) {
+    return false;
+  }
+
+  const selectors = [
+    "id=android:id/button3",
+    "id=android:id/button1",
+    "id=android:id/button2",
+    'android=new UiSelector().textMatches("(?i)^(OK|Got it|Close|Dismiss)$")',
+  ];
+
+  for (const selector of selectors) {
+    try {
+      const element = await $(selector);
+      if (await element.isDisplayed()) {
+        const text = (await element.getText().catch(() => selector)) || selector;
+        console.log(`[KittenTTS benchmark] Dismissing Android dialog: ${text}`);
+        await element.click();
+        await browser.pause(1000);
+        await activateAndroidBenchmarkApp();
+        return true;
+      }
+    } catch {
+      // Most devices will not show a blocking system dialog. Keep polling.
+    }
+  }
+
+  return false;
+}
+
+async function dismissKeyboardIfNeeded() {
+  try {
+    if (typeof browser.hideKeyboard === "function") {
+      await browser.hideKeyboard();
+      await browser.pause(500);
+      return;
+    }
+  } catch {
+    // Some Android sessions report no keyboard even after text entry.
+  }
+
+  if (isAndroidSession()) {
+    try {
+      await browser.pressKeyCode(4);
+      await browser.pause(500);
+    } catch {
+      // The keyboard may already be dismissed.
+    }
+  }
+}
+
 function usableElementText(candidate, accessibilityId) {
   const text = String(candidate || "");
   return text.length > 0 && text !== accessibilityId ? text : "";
 }
 
+function stripFlutterSemanticsLabel(value, accessibilityId) {
+  let text = String(value || "");
+  const prefix = `${accessibilityId}:`;
+  if (text.startsWith(prefix)) {
+    text = text.slice(prefix.length);
+  }
+  const newlinePrefix = `${accessibilityId}\n`;
+  if (text.startsWith(newlinePrefix)) {
+    text = text.slice(newlinePrefix.length);
+  }
+  const commaPrefix = `${accessibilityId}, `;
+  if (text.startsWith(commaPrefix)) {
+    text = text.slice(commaPrefix.length);
+  }
+  const marker = `, ${accessibilityId}`;
+  const markerIndex = text.indexOf(marker);
+  if (markerIndex >= 0) {
+    text = text.slice(0, markerIndex);
+  }
+  return text.trim();
+}
+
+function shouldOverrideSampleText(currentText, sampleText) {
+  if (process.env.TESTMU_SKIP_SAMPLE_OVERRIDE === "true") {
+    return false;
+  }
+
+  if (!sampleText) {
+    return false;
+  }
+
+  const normalizedCurrentText = String(currentText || "").trim();
+  return normalizedCurrentText !== sampleText;
+}
+
 async function readElementText(accessibilityId) {
-  const element = await $(`~${accessibilityId}`);
+  const element = await findReadableElementByAutomationId(accessibilityId);
+  if (!element) {
+    return "";
+  }
 
   const firstText = usableElementText(
     await element.getText().catch(() => ""),
@@ -78,7 +281,7 @@ async function readElementText(accessibilityId) {
 
   const attributeNames = isIosSession()
     ? ["label", "value", "name"]
-    : ["text", "label", "value"];
+    : ["text", "content-desc", "contentDescription", "name", "hint"];
 
   for (const attributeName of attributeNames) {
     const attributeText = usableElementText(
@@ -174,7 +377,10 @@ async function attachWerAudioChunksDirect(report) {
     const chunks = [];
     for (let index = 0; index < chunkCount; index += 1) {
       const accessibilityId = `benchmark-audio-${rowSlug}-${index}`;
-      const chunk = await readElementText(accessibilityId);
+      const chunk = stripFlutterSemanticsLabel(
+        await readElementText(accessibilityId),
+        accessibilityId
+      );
       if (!chunk) {
         throw new Error(
           `Missing WER audio chunk ${index + 1}/${chunkCount} for ${row.model} (${accessibilityId}).`
@@ -234,7 +440,10 @@ async function attachWerAudioChunksFromPager(report) {
     const expected = expectedChunks[globalIndex];
     await waitForAudioPagerKey(expected.key, globalIndex, expectedChunks.length);
 
-    const chunk = await readElementText("benchmark-audio-current");
+    const chunk = stripFlutterSemanticsLabel(
+      await readElementText("benchmark-audio-current"),
+      "benchmark-audio-current"
+    );
     if (!chunk) {
       throw new Error(
         `Missing WER audio chunk ${expected.index + 1}/${expected.chunkCount} for ${expected.row.model} (${expected.key}).`
@@ -244,7 +453,11 @@ async function attachWerAudioChunksFromPager(report) {
     chunksByModel.get(expected.row.model).push(chunk);
 
     if (globalIndex < expectedChunks.length - 1) {
-      await $("~benchmark-audio-next").click();
+      const nextButton = await findAudioPagerNextButton();
+      if (!nextButton) {
+        throw new Error("Missing WER audio pager next button.");
+      }
+      await nextButton.click();
     }
   }
 
@@ -277,12 +490,37 @@ async function attachWerAudioChunksFromPager(report) {
   };
 }
 
+async function findAudioPagerNextButton() {
+  const automationButton = await findElementByAutomationId("benchmark-audio-next");
+  if (
+    automationButton &&
+    (await automationButton.isEnabled().catch(() => true))
+  ) {
+    return automationButton;
+  }
+
+  if (isAndroidSession()) {
+    const visibleNext = await findDisplayedElement([
+      'android=new UiSelector().text("Next")',
+      'android=new UiSelector().descriptionContains("Next")',
+    ]);
+    if (visibleNext) {
+      return visibleNext;
+    }
+  }
+
+  return findElementByAutomationId("benchmark-audio-next");
+}
+
 async function waitForAudioPagerKey(expectedKey, globalIndex, totalChunks) {
   const startedAt = Date.now();
   let lastKey = "";
 
   while (Date.now() - startedAt < 10_000) {
-    lastKey = await readElementText("benchmark-audio-current-key");
+    lastKey = stripFlutterSemanticsLabel(
+      await readElementText("benchmark-audio-current-key"),
+      "benchmark-audio-current-key"
+    );
     if (lastKey === expectedKey) {
       return;
     }
@@ -306,28 +544,58 @@ async function getBenchmarkReportFromUi({ includeAudio = false } = {}) {
 }
 
 function markPartialReport(report, timeoutMessage) {
+  const sourceRows = Array.isArray(report.rows) ? report.rows : [];
+  const rows = EXPECTED_MODELS.map((model) => {
+    const row =
+      sourceRows.find(
+        (candidate) => candidate.model === model || candidate.modelId === model
+      ) || null;
+
+    if (!row) {
+      return {
+        model,
+        modelId: model,
+        modelDisplayName: expectedModelDisplayName(model),
+        status: "failed",
+        failedStage: "Benchmark timeout",
+        errorSummary: `Model did not finish before the device session ended. ${timeoutMessage}`,
+      };
+    }
+
+    if (row.status === "passed") {
+      return row;
+    }
+
+    if (row.status !== "failed") {
+      return {
+        ...row,
+        status: "failed",
+        failedStage: row.failedStage || "Benchmark timeout",
+        errorSummary:
+          row.errorSummary ||
+          `Model was still ${row.status || "running"} when the device session ended. ${timeoutMessage}`,
+      };
+    }
+
+    const summary = String(row.errorSummary || "");
+    if (
+      !/did not run|did not finish|in progress|session ended/i.test(summary)
+    ) {
+      return row;
+    }
+
+    return {
+      ...row,
+      failedStage: row.failedStage || "Benchmark timeout",
+      errorSummary: `${summary} ${timeoutMessage}`.trim(),
+    };
+  });
+
   return {
     ...report,
     status: "partial",
     finishedAt: report.finishedAt || null,
-    rows: (report.rows || []).map((row) => {
-      if (row.status !== "failed") {
-        return row;
-      }
-
-      const summary = String(row.errorSummary || "");
-      if (
-        !/did not run|did not finish|in progress|session ended/i.test(summary)
-      ) {
-        return row;
-      }
-
-      return {
-        ...row,
-        failedStage: row.failedStage || "Benchmark timeout",
-        errorSummary: `${summary} ${timeoutMessage}`.trim(),
-      };
-    }),
+    rows,
   };
 }
 
@@ -387,9 +655,10 @@ function writeDeviceReport(report, startedAtMs) {
       process.env.TESTMU_IOS_VERSION ||
       null,
     realDevice: process.env.TESTMU_REAL_DEVICE !== "false",
+    allowedFailure: process.env.TESTMU_ALLOW_FAILURE === "true",
     sessionId: browser.sessionId,
     githubRunId: process.env.GITHUB_RUN_ID || null,
-    githubSha: process.env.GITHUB_SHA || null,
+    githubSha: process.env.TESTMU_GITHUB_SHA || process.env.GITHUB_SHA || null,
     deviceStartedAt: new Date(startedAtMs).toISOString(),
     deviceFinishedAt: new Date(finishedAtMs).toISOString(),
     totalRuntimeMs: finishedAtMs - startedAtMs,
@@ -406,10 +675,8 @@ function writeDeviceReport(report, startedAtMs) {
 
 async function getOptionalText(accessibilityId) {
   try {
-    const element = await $(`~${accessibilityId}`);
-    if (await element.isDisplayed()) {
-      return await element.getText();
-    }
+    const element = await findElementByAutomationId(accessibilityId);
+    return element ? await readTextFromElement(element, accessibilityId) : null;
   } catch {
     return null;
   }
@@ -419,11 +686,62 @@ async function getOptionalText(accessibilityId) {
 
 async function isDisplayed(accessibilityId) {
   try {
-    const element = await $(`~${accessibilityId}`);
-    return await element.isDisplayed();
+    return Boolean(await findElementByAutomationId(accessibilityId));
   } catch {
     return false;
   }
+}
+
+async function findDisplayedElement(selectors) {
+  for (const selector of selectors) {
+    try {
+      const element = await $(selector);
+      if (await element.isDisplayed()) {
+        return element;
+      }
+    } catch {
+      // Flutter can expose the same widget differently across platforms.
+    }
+  }
+
+  return null;
+}
+
+async function findBenchmarkTextInput() {
+  const selectors = automationSelectors("tts-input");
+  if (isAndroidSession()) {
+    selectors.push('android=new UiSelector().className("android.widget.EditText")');
+  }
+
+  return findDisplayedElement(selectors);
+}
+
+async function readTextFromElement(element, fallbackId) {
+  const firstText = usableElementText(
+    await element.getText().catch(() => ""),
+    fallbackId
+  );
+
+  if (firstText) {
+    return firstText;
+  }
+
+  const attributeNames = isIosSession()
+    ? ["label", "value", "name"]
+    : ["text", "content-desc", "contentDescription", "name", "hint"];
+
+  for (const attributeName of attributeNames) {
+    const attributeText = usableElementText(
+      await element.getAttribute(attributeName).catch(() => ""),
+      fallbackId
+    );
+
+    if (attributeText) {
+      return attributeText;
+    }
+  }
+
+  return "";
 }
 
 async function getPageSourceSummary() {
@@ -437,11 +755,73 @@ async function getPageSourceSummary() {
   }
 }
 
+async function findBenchmarkRunButton() {
+  const automationId = BENCHMARK_BUTTON_ID;
+  const button = await findElementByAutomationId(automationId);
+  if (!button) {
+    throw new Error(`Missing benchmark run button: ${automationId}`);
+  }
+  return button;
+}
+
+async function collectAndroidFailureContext() {
+  if (!isAndroidSession()) {
+    return "";
+  }
+
+  const details = [];
+  try {
+    details.push(`Current package: ${await browser.getCurrentPackage()}`);
+  } catch (error) {
+    details.push(`Current package unavailable: ${error.message}`);
+  }
+
+  try {
+    const sourceSummary = await getPageSourceSummary();
+    details.push(`Page source: ${sourceSummary}`);
+  } catch {
+    // getPageSourceSummary already protects itself.
+  }
+
+  try {
+    const logs = await browser.getLogs("logcat");
+    const interesting = logs
+      .map((entry) => String(entry.message || entry))
+      .filter((line) =>
+        /AndroidRuntime|FATAL EXCEPTION|com\.kittenml|kittentts|flutter|onnx|ort|libc|crash/i.test(
+          line
+        )
+      )
+      .slice(-120);
+    if (interesting.length > 0) {
+      const logcat = interesting.join("\n");
+      fs.mkdirSync(path.join(process.cwd(), "reports"), { recursive: true });
+      fs.writeFileSync(
+        path.join(process.cwd(), "reports", "android-logcat-tail.log"),
+        `${logcat}\n`
+      );
+      details.push(`Logcat tail:\n${logcat.slice(-4000)}`);
+    } else {
+      details.push("Logcat tail: no matching AndroidRuntime/Flutter/ORT lines.");
+    }
+  } catch (error) {
+    details.push(`Logcat unavailable: ${error.message}`);
+  }
+
+  return details.join("\n");
+}
+
 async function waitForAppReady(timeoutMs) {
   const startedAt = Date.now();
   let lastStatus = "No app status captured yet.";
 
+  await activateAndroidBenchmarkApp();
+
   while (Date.now() - startedAt < timeoutMs) {
+    if (await dismissAndroidSystemDialog()) {
+      continue;
+    }
+
     const errorMessage = await getOptionalText("error-message");
     if (errorMessage) {
       throw new Error(`App showed error-banner before benchmark: ${errorMessage}`);
@@ -453,9 +833,11 @@ async function waitForAppReady(timeoutMs) {
       console.log(`[KittenTTS app status] ${statusLabel}`);
     }
 
-    const inputVisible = await isDisplayed("tts-input");
-    const benchmark = await $("~benchmark-button");
-    if (inputVisible && (await benchmark.isEnabled().catch(() => false))) {
+    const benchmark = await findElementByAutomationId(BENCHMARK_BUTTON_ID);
+    if (
+      benchmark &&
+      (await benchmark.isEnabled().catch(() => false))
+    ) {
       return benchmark;
     }
 
@@ -478,7 +860,10 @@ async function waitForBenchmarkReport(timeoutMs) {
     if (report) {
       lastReport = report;
       if (hasFinishedBenchmark(report)) {
-        return (await getBenchmarkReportFromUi({ includeAudio: true })) || report;
+        return (
+          (await getBenchmarkReportFromUi({ includeAudio: REQUIRE_WER_AUDIO })) ||
+          report
+        );
       }
     }
 
@@ -493,7 +878,7 @@ async function waitForBenchmarkReport(timeoutMs) {
       console.log(`[KittenTTS benchmark status] ${statusLabel}`);
     }
 
-    await browser.pause(5000);
+    await browser.pause(BENCHMARK_POLL_INTERVAL_MS);
   }
 
   const timeoutMessage = `Timed out waiting for benchmark-report. Last app status: ${lastStatus}`;
@@ -501,19 +886,25 @@ async function waitForBenchmarkReport(timeoutMs) {
     return markPartialReport(lastReport, timeoutMessage);
   }
 
-  throw new Error(timeoutMessage);
+  const failureContext = await collectAndroidFailureContext();
+  throw new Error(
+    failureContext ? `${timeoutMessage}\n${failureContext}` : timeoutMessage
+  );
 }
 
 describe("KittenTTS Flutter benchmark", () => {
   it("benchmarks every bundled model and writes a device report", async () => {
     const deviceStartedAtMs = Date.now();
-    const benchmark = await waitForAppReady(APP_READY_TIMEOUT_MS);
-    const input = await $("~tts-input");
+    let benchmark = await waitForAppReady(APP_READY_TIMEOUT_MS);
+    benchmark = await findBenchmarkRunButton();
 
     const sampleText = process.env.TESTMU_SAMPLE_TEXT;
     if (sampleText) {
-      const currentText = await input.getText().catch(() => "");
-      if (currentText !== sampleText) {
+      const input = await findBenchmarkTextInput();
+      const currentText = input
+        ? await readTextFromElement(input, "tts-input")
+        : "";
+      if (shouldOverrideSampleText(currentText, sampleText)) {
         try {
           await input.click();
           await input.clearValue();
@@ -523,6 +914,12 @@ describe("KittenTTS Flutter benchmark", () => {
             `[KittenTTS benchmark] Could not override sample text; continuing with the app default. ${error.message}`
           );
         }
+        await dismissKeyboardIfNeeded();
+        benchmark = await findBenchmarkRunButton();
+      } else {
+        console.log(
+          `[KittenTTS benchmark] Using app sample text; Appium reported "${currentText || "<empty>"}".`
+        );
       }
     }
 
@@ -533,7 +930,13 @@ describe("KittenTTS Flutter benchmark", () => {
     expect(report.schemaVersion).toBe(1);
     expect(report.sampleText.length).toBeGreaterThan(0);
     expect(report.characterLength).toBeGreaterThan(0);
-    expect(report.rows.length).toBe(EXPECTED_MODELS.length);
+    if (report.rows.length !== EXPECTED_MODELS.length) {
+      throw new Error(
+        `Benchmark report has ${report.rows.length} model rows, expected ${EXPECTED_MODELS.length}. Models: ${report.rows
+          .map((row) => row.model || row.modelId || row.modelDisplayName)
+          .join(", ")}`
+      );
+    }
 
     for (const expectedModel of EXPECTED_MODELS) {
       const row = report.rows.find(
@@ -554,9 +957,9 @@ describe("KittenTTS Flutter benchmark", () => {
         expect(row.generationSeconds).toBeGreaterThan(0);
         expect(row.firstGenerationMs).toBeGreaterThan(0);
         expect(row.firstGenerationSeconds).toBeGreaterThan(0);
-        expect(row.warmRunCount).toBe(5);
-        expect(row.warmGenerationMs.length).toBe(5);
-        expect(row.warmRtf.length).toBe(5);
+        expect(row.warmRunCount).toBe(EXPECTED_WARM_RUNS);
+        expect(row.warmGenerationMs.length).toBe(EXPECTED_WARM_RUNS);
+        expect(row.warmRtf.length).toBe(EXPECTED_WARM_RUNS);
         expect(row.warmP50GenerationMs).toBeGreaterThan(0);
         expect(row.warmP95GenerationMs).toBeGreaterThan(0);
         expect(row.warmP50Rtf).toBeGreaterThan(0);
@@ -570,7 +973,7 @@ describe("KittenTTS Flutter benchmark", () => {
             `Invalid sample hash for ${expectedModel}: ${row.sampleHash}`
           );
         }
-        if (process.env.TESTMU_REQUIRE_WER_AUDIO === "true") {
+        if (REQUIRE_WER_AUDIO) {
           expect(row.werReferenceText).toBe(report.sampleText);
           expect(row.werAudioFormat).toBe("wav-base64");
           expect(row.werAudioSampleRate).toBe(24000);

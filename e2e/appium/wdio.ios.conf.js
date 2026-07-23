@@ -1,6 +1,12 @@
 const appUrl = process.env.TESTMU_IOS_APP_URL;
 const deviceName = process.env.TESTMU_IOS_DEVICE || "iPhone 14";
 const platformVersion = process.env.TESTMU_IOS_VERSION || "16";
+const benchmarkReportTimeoutMs = Number(
+  process.env.TESTMU_BENCHMARK_REPORT_TIMEOUT_MS || 1800000
+);
+const mochaTimeoutMs = Number(
+  process.env.TESTMU_MOCHA_TIMEOUT_MS || benchmarkReportTimeoutMs + 120000
+);
 
 if (!appUrl) {
   throw new Error(
@@ -55,6 +61,6 @@ exports.config = {
   reporters: ["spec"],
   mochaOpts: {
     ui: "bdd",
-    timeout: 1800000,
+    timeout: mochaTimeoutMs,
   },
 };

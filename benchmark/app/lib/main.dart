@@ -1,27 +1,52 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:kittentts_flutter/kittentts_flutter.dart';
 
+import 'benchmark_model_assets.dart';
 import 'web_bridge.dart';
 
 void main() {
   runApp(const KittenBenchmarkApp());
 }
 
-const _defaultSampleText = String.fromEnvironment(
+const _compiledDefaultSampleText = String.fromEnvironment(
   'TESTMU_SAMPLE_TEXT',
   defaultValue:
       'KittenTTS runs fully on your device and creates clear speech quickly.\n'
       'This benchmark compares every model for speed, quality, and consistency.',
 );
-const _warmRunCount = int.fromEnvironment('TESTMU_WARM_RUNS', defaultValue: 5);
+const _defaultWarmRunCount = int.fromEnvironment(
+  'TESTMU_WARM_RUNS',
+  defaultValue: 5,
+);
+const _ortNumThreads = int.fromEnvironment(
+  'TESTMU_ORT_NUM_THREADS',
+  defaultValue: 1,
+);
+const _maxTokensPerChunk = int.fromEnvironment(
+  'TESTMU_MAX_TOKENS_PER_CHUNK',
+  defaultValue: 96,
+);
+const _modelIdsCsv = String.fromEnvironment('TESTMU_MODEL_IDS');
+const _audioSemanticsMode = String.fromEnvironment(
+  'TESTMU_AUDIO_SEMANTICS_MODE',
+  defaultValue: 'direct-and-pager',
+);
 const _voice = 'bella';
 const _speed = 1.0;
-const _audioChunkSize = 5000;
+const _audioChunkSize = 64000;
+const _lowSpecBenchmarkModelIds = <KittenTTSModelId>['nano-int8'];
+final _benchmarkModelIds = _resolveBenchmarkModelIds();
+final _benchmarkWarmRunCount = _resolveWarmRunCount();
+final _defaultSampleText =
+    Uri.base.queryParameters['benchmarkText'] ?? _compiledDefaultSampleText;
+final _exposeDirectAudioChunks = _audioSemanticsMode != 'pager';
+final _benchmarkModelTimeout = _resolveBenchmarkModelTimeout();
+const List<OrtProvider>? _benchmarkOrtProviders = null;
 
 const _background = Color(0xFFF8FAFC);
 const _foreground = Color(0xFF101828);
@@ -60,6 +85,7 @@ class KittenBenchmarkPage extends StatefulWidget {
 
 class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
   final _textController = TextEditingController(text: _defaultSampleText);
+  late final Future<_BenchmarkPhonemizerData> _phonemizerDataFuture;
 
   var _status = 'Ready';
   var _running = false;
@@ -72,9 +98,11 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
   @override
   void initState() {
     super.initState();
+    _phonemizerDataFuture = _loadBenchmarkPhonemizerData();
     setBenchmarkBindings(
-      start: _runBenchmark,
+      start: () => _runBenchmark(),
       reportJson: () => _reportJson,
+      audioChunksJson: _audioChunksJson,
       error: () => _errorMessage,
     );
     if (benchmarkAutoStart) {
@@ -89,9 +117,14 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
     super.dispose();
   }
 
-  Future<void> _runBenchmark() async {
+  Future<void> _runBenchmark({
+    List<KittenTTSModelId>? modelIds,
+    int? warmRunCount,
+  }) async {
     if (_running) return;
 
+    final benchmarkModelIds = modelIds ?? _benchmarkModelIds;
+    final benchmarkWarmRunCount = warmRunCount ?? _benchmarkWarmRunCount;
     final sampleText = _textController.text.trim();
     if (sampleText.isEmpty) {
       setState(() => _errorMessage = 'Sample text is empty.');
@@ -99,64 +132,129 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
     }
 
     final startedAt = DateTime.now().toUtc();
-    final rows = <Map<String, Object?>>[];
+    final rows = benchmarkModelIds.map(_queuedBenchmarkRow).toList();
     final chunks = <_AudioChunk>[];
 
     setState(() {
       _running = true;
-      _status = 'Starting benchmark';
+      _status = 'Loading phonemizer data';
       _errorMessage = null;
       _reportJson = '';
-      _report = {
-        'schemaVersion': 1,
-        'status': 'running',
-        'sampleText': sampleText,
-        'characterLength': sampleText.characters.length,
-        'voice': _voice,
-        'voiceDisplayName': voiceDisplayName(_voice),
-        'speed': _speed,
-        'warmRunCount': _warmRunCount,
-        'startedAt': startedAt.toIso8601String(),
-        'finishedAt': null,
-        'rows': rows,
-      };
+      _audioChunks = const [];
+      _audioPagerIndex = 0;
     });
+    _publishPartialReport(
+      sampleText,
+      startedAt,
+      rows,
+      chunks,
+      benchmarkWarmRunCount,
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 250));
 
-    for (final modelId in allKittenTTSModelIds) {
+    final phonemizerData = await _phonemizerDataFuture;
+    _setStatus('Starting benchmark');
+    _publishPartialReport(
+      sampleText,
+      startedAt,
+      rows,
+      chunks,
+      benchmarkWarmRunCount,
+    );
+
+    for (final entry in benchmarkModelIds.asMap().entries) {
+      final modelId = entry.value;
       final modelName = modelRepoId(modelId);
-      final row = <String, Object?>{
-        'model': modelName,
-        'modelId': modelId,
-        'modelDisplayName': modelDisplayName(modelId),
-        'status': 'failed',
-        'failedStage': 'Queued',
-        'errorSummary': 'Model did not run yet.',
-      };
-      rows.add(row);
-      _publishPartialReport(sampleText, startedAt, rows, chunks);
+      final row = rows[entry.key];
+      _publishPartialReport(
+        sampleText,
+        startedAt,
+        rows,
+        chunks,
+        benchmarkWarmRunCount,
+      );
 
       KittenTTS? tts;
       try {
-        _setStatus('Loading ${modelDisplayName(modelId)}');
-        final loadStarted = Stopwatch()..start();
-        tts = await KittenTTS.create(
-          config: KittenTTSConfig(model: modelId, analytics: false),
-          onProgress: (progress, [info]) {
-            final percent = (progress * 100).clamp(0, 100).toStringAsFixed(0);
-            _setStatus('Loading ${modelDisplayName(modelId)} $percent%');
-          },
+        await _markRowRunning(
+          sampleText,
+          startedAt,
+          rows,
+          chunks,
+          row,
+          modelId,
+          'Copying ${modelDisplayName(modelId)} assets',
+          benchmarkWarmRunCount,
         );
+        final modelFiles = await resolveBenchmarkModelFiles(modelId);
+        await _markRowRunning(
+          sampleText,
+          startedAt,
+          rows,
+          chunks,
+          row,
+          modelId,
+          'Loading ${modelDisplayName(modelId)}',
+          benchmarkWarmRunCount,
+        );
+        final loadStarted = Stopwatch()..start();
+        final loadedTts = await _withBenchmarkTimeout(
+          KittenTTS.create(
+            config: KittenTTSConfig(
+              model: modelId,
+              analytics: false,
+              ortNumThreads: _ortNumThreads,
+              ortProviders: _benchmarkOrtProviders,
+              maxTokensPerChunk: _maxTokensPerChunk,
+              modelFiles: modelFiles,
+              phonemizer: CEPhonemizer(
+                rulesText: phonemizerData.rulesText,
+                listText: phonemizerData.listText,
+              ),
+            ),
+            onProgress: (progress, [info]) {
+              final percent = (progress * 100).clamp(0, 100).toStringAsFixed(0);
+              _setStatus('Loading ${modelDisplayName(modelId)} $percent%');
+            },
+          ),
+          'Loading ${modelDisplayName(modelId)}',
+        );
+        tts = loadedTts;
         loadStarted.stop();
 
-        _setStatus('Cold run ${modelDisplayName(modelId)}');
-        final first = await _timedGenerate(tts, sampleText);
+        await _markRowRunning(
+          sampleText,
+          startedAt,
+          rows,
+          chunks,
+          row,
+          modelId,
+          'Cold run ${modelDisplayName(modelId)}',
+          benchmarkWarmRunCount,
+        );
+        final first = await _withBenchmarkTimeout(
+          _timedGenerate(loadedTts, sampleText),
+          'Cold run ${modelDisplayName(modelId)}',
+        );
         final warm = <_TimedGeneration>[];
 
-        for (var index = 0; index < _warmRunCount; index += 1) {
-          _setStatus(
-            'Warm run ${index + 1}/$_warmRunCount ${modelDisplayName(modelId)}',
+        for (var index = 0; index < benchmarkWarmRunCount; index += 1) {
+          await _markRowRunning(
+            sampleText,
+            startedAt,
+            rows,
+            chunks,
+            row,
+            modelId,
+            'Warm run ${index + 1}/$benchmarkWarmRunCount ${modelDisplayName(modelId)}',
+            benchmarkWarmRunCount,
           );
-          warm.add(await _timedGenerate(tts, sampleText));
+          warm.add(
+            await _withBenchmarkTimeout(
+              _timedGenerate(loadedTts, sampleText),
+              'Warm run ${index + 1}/$benchmarkWarmRunCount ${modelDisplayName(modelId)}',
+            ),
+          );
         }
 
         final best = warm.reduce(
@@ -164,8 +262,9 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
               item.generationMs < currentBest.generationMs ? item : currentBest,
         );
         final warmMs = warm.map((item) => item.generationMs).toList();
-        final warmSeconds =
-            warm.map((item) => _round(item.generationMs / 1000)).toList();
+        final warmSeconds = warm
+            .map((item) => _round(item.generationMs / 1000))
+            .toList();
         final warmRtf = warm
             .map((item) => _round((item.generationMs / 1000) / item.duration))
             .toList();
@@ -187,13 +286,17 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
             'firstGenerationSeconds': _round(first.generationMs / 1000),
             'generationMs': best.generationMs,
             'generationSeconds': _round(best.generationMs / 1000),
-            'warmRunCount': _warmRunCount,
+            'warmRunCount': benchmarkWarmRunCount,
             'warmGenerationMs': warmMs,
             'warmGenerationSeconds': warmSeconds,
             'warmP50GenerationMs': _percentile(warmMs, 0.50).round(),
-            'warmP50GenerationSeconds': _round(_percentile(warmMs, 0.50) / 1000),
+            'warmP50GenerationSeconds': _round(
+              _percentile(warmMs, 0.50) / 1000,
+            ),
             'warmP95GenerationMs': _percentile(warmMs, 0.95).round(),
-            'warmP95GenerationSeconds': _round(_percentile(warmMs, 0.95) / 1000),
+            'warmP95GenerationSeconds': _round(
+              _percentile(warmMs, 0.95) / 1000,
+            ),
             'durationSeconds': _round(best.duration),
             'rtf': _round((best.generationMs / 1000) / best.duration),
             'warmRtf': warmRtf,
@@ -219,11 +322,21 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
             'status': 'failed',
             'failedStage': _status,
             'errorSummary': _friendlyError(error),
-            'errorDetails': stackTrace.toString().split('\n').take(8).join('\n'),
+            'errorDetails': stackTrace
+                .toString()
+                .split('\n')
+                .take(8)
+                .join('\n'),
           });
       } finally {
         await tts?.dispose();
-        _publishPartialReport(sampleText, startedAt, rows, chunks);
+        _publishPartialReport(
+          sampleText,
+          startedAt,
+          rows,
+          chunks,
+          benchmarkWarmRunCount,
+        );
       }
     }
 
@@ -235,14 +348,17 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
       finishedAt: finishedAt,
       status: failed ? 'partial' : 'passed',
       rows: rows,
+      warmRunCount: benchmarkWarmRunCount,
     );
 
     setState(() {
       _running = false;
-      _status = failed ? 'Benchmark finished with model failures' : 'Benchmark finished';
+      _status = failed
+          ? 'Benchmark finished with model failures'
+          : 'Benchmark finished';
       _report = finalReport;
       _reportJson = const JsonEncoder.withIndent('  ').convert(finalReport);
-      _audioChunks = chunks;
+      _audioChunks = List.unmodifiable(chunks);
       _audioPagerIndex = 0;
     });
   }
@@ -257,9 +373,58 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
     );
   }
 
+  Future<T> _withBenchmarkTimeout<T>(Future<T> future, String stage) {
+    final timeout = _benchmarkModelTimeout;
+    if (timeout == null) return future;
+    return future.timeout(
+      timeout,
+      onTimeout: () {
+        throw TimeoutException(
+          '$stage timed out after ${timeout.inSeconds} seconds.',
+        );
+      },
+    );
+  }
+
   void _setStatus(String status) {
     if (!mounted) return;
     setState(() => _status = status);
+  }
+
+  Future<void> _markRowRunning(
+    String sampleText,
+    DateTime startedAt,
+    List<Map<String, Object?>> rows,
+    List<_AudioChunk> chunks,
+    Map<String, Object?> row,
+    KittenTTSModelId modelId,
+    String stage,
+    int warmRunCount,
+  ) async {
+    row
+      ..clear()
+      ..addAll({
+        'model': modelRepoId(modelId),
+        'modelId': modelId,
+        'modelDisplayName': modelDisplayName(modelId),
+        'status': 'running',
+        'failedStage': stage,
+        'errorSummary': 'Model is still running at this stage.',
+      });
+    _setStatus(stage);
+    _publishPartialReport(sampleText, startedAt, rows, chunks, warmRunCount);
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+  }
+
+  Map<String, Object?> _queuedBenchmarkRow(KittenTTSModelId modelId) {
+    return {
+      'model': modelRepoId(modelId),
+      'modelId': modelId,
+      'modelDisplayName': modelDisplayName(modelId),
+      'status': 'failed',
+      'failedStage': 'Queued',
+      'errorSummary': 'Model did not run yet.',
+    };
   }
 
   void _publishPartialReport(
@@ -267,6 +432,7 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
     DateTime startedAt,
     List<Map<String, Object?>> rows,
     List<_AudioChunk> chunks,
+    int warmRunCount,
   ) {
     if (!mounted) return;
     final report = _buildReport(
@@ -274,11 +440,11 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
       startedAt: startedAt,
       status: 'running',
       rows: rows,
+      warmRunCount: warmRunCount,
     );
     setState(() {
       _report = report;
       _reportJson = const JsonEncoder.withIndent('  ').convert(report);
-      _audioChunks = List.unmodifiable(chunks);
     });
   }
 
@@ -287,6 +453,7 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
     required DateTime startedAt,
     required String status,
     required List<Map<String, Object?>> rows,
+    required int warmRunCount,
     DateTime? finishedAt,
   }) {
     return {
@@ -297,11 +464,18 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
       'voice': _voice,
       'voiceDisplayName': voiceDisplayName(_voice),
       'speed': _speed,
-      'warmRunCount': _warmRunCount,
+      'warmRunCount': warmRunCount,
+      'ortNumThreads': _ortNumThreads,
+      'ortProviders': _benchmarkOrtProviderNames(),
+      'maxTokensPerChunk': _maxTokensPerChunk,
       'startedAt': startedAt.toIso8601String(),
       'finishedAt': finishedAt?.toIso8601String(),
       'rows': rows,
     };
+  }
+
+  List<String>? _benchmarkOrtProviderNames() {
+    return _benchmarkOrtProviders?.map((item) => item.name).toList();
   }
 
   List<_AudioChunk> _splitAudio(String rowSlug, String wavBase64) {
@@ -322,10 +496,21 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
     return chunks;
   }
 
+  String _audioChunksJson() {
+    return jsonEncode({
+      for (final chunk in _audioChunks) chunk.accessibilityId: chunk.value,
+    });
+  }
+
   String _friendlyError(Object error) {
     final message = error.toString();
     if (message.length <= 500) return message;
     return '${message.substring(0, 500)}...';
+  }
+
+  void _advanceAudioPager() {
+    if (_audioPagerIndex >= _audioChunks.length - 1) return;
+    setState(() => _audioPagerIndex += 1);
   }
 
   @override
@@ -333,12 +518,27 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
     final currentChunk = _audioChunks.isEmpty
         ? null
         : _audioChunks[_audioPagerIndex.clamp(0, _audioChunks.length - 1)];
+    final hasNextChunk =
+        currentChunk != null && _audioPagerIndex < _audioChunks.length - 1;
 
     return Scaffold(
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
+            Semantics(
+              label: 'benchmark-json-display',
+              value: _reportJson.isEmpty ? '{}' : _reportJson,
+              child: const SizedBox(height: 1, width: 1),
+            ),
+            if (_exposeDirectAudioChunks)
+              ..._audioChunks.map(
+                (chunk) => Semantics(
+                  label: chunk.accessibilityId,
+                  value: chunk.value,
+                  child: const SizedBox(height: 1, width: 1),
+                ),
+              ),
             const Text(
               'KittenTTS Flutter Benchmark',
               style: TextStyle(
@@ -373,8 +573,23 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
               button: true,
               enabled: !_running,
               child: FilledButton(
-                onPressed: _running ? null : _runBenchmark,
+                onPressed: _running ? null : () => _runBenchmark(),
                 child: Text(_running ? 'Running benchmark' : 'Run benchmark'),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Semantics(
+              label: 'benchmark-button-low-spec',
+              button: true,
+              enabled: !_running,
+              child: OutlinedButton(
+                onPressed: _running
+                    ? null
+                    : () => _runBenchmark(
+                        modelIds: _lowSpecBenchmarkModelIds,
+                        warmRunCount: 1,
+                      ),
+                child: const Text('Run low-spec benchmark'),
               ),
             ),
             const SizedBox(height: 12),
@@ -398,50 +613,41 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
               ),
             ],
             const SizedBox(height: 18),
-            _ResultSummary(report: _report),
-            const SizedBox(height: 18),
             if (currentChunk != null) ...[
+              Semantics(
+                label: 'benchmark-audio-current-key:${currentChunk.key}',
+                child: const SizedBox(height: 1, width: 1),
+              ),
               Row(
                 children: [
                   Expanded(
-                    child: Semantics(
-                      label: 'benchmark-audio-current-key',
-                      value: currentChunk.key,
-                      child: Text(
-                        'Audio chunk ${_audioPagerIndex + 1}/${_audioChunks.length}',
-                        style: const TextStyle(color: _muted),
-                      ),
+                    child: Text(
+                      'Audio chunk ${_audioPagerIndex + 1}/${_audioChunks.length}',
+                      style: const TextStyle(color: _muted),
                     ),
                   ),
                   Semantics(
                     label: 'benchmark-audio-next',
                     button: true,
-                    enabled: _audioPagerIndex < _audioChunks.length - 1,
+                    enabled: hasNextChunk,
+                    onTap: hasNextChunk ? _advanceAudioPager : null,
                     child: OutlinedButton(
-                      onPressed: _audioPagerIndex < _audioChunks.length - 1
-                          ? () => setState(() => _audioPagerIndex += 1)
-                          : null,
+                      onPressed: hasNextChunk ? _advanceAudioPager : null,
                       child: const Text('Next'),
                     ),
                   ),
                 ],
               ),
               Semantics(
-                label: 'benchmark-audio-current',
-                value: currentChunk.value,
+                label: 'benchmark-audio-current:${currentChunk.value}',
                 child: const SizedBox(height: 1, width: 1),
               ),
+              const SizedBox(height: 18),
             ],
-            ..._audioChunks.map(
-              (chunk) => Semantics(
-                label: chunk.accessibilityId,
-                value: chunk.value,
-                child: const SizedBox(height: 1, width: 1),
-              ),
-            ),
+            _ResultSummary(report: _report),
             const SizedBox(height: 18),
             Semantics(
-              label: 'benchmark-json-display',
+              label: 'benchmark-json-visible',
               value: _reportJson,
               child: DecoratedBox(
                 decoration: BoxDecoration(
@@ -502,7 +708,10 @@ class _ResultSummary extends StatelessWidget {
                 ),
               ),
             if (rows.isEmpty)
-              const Text('No benchmark rows yet.', style: TextStyle(color: _muted)),
+              const Text(
+                'No benchmark rows yet.',
+                style: TextStyle(color: _muted),
+              ),
           ],
         ),
       ),
@@ -519,6 +728,16 @@ class _TimedGeneration {
   double get duration => max(result.duration, 0.001);
 }
 
+class _BenchmarkPhonemizerData {
+  const _BenchmarkPhonemizerData({
+    required this.rulesText,
+    required this.listText,
+  });
+
+  final String rulesText;
+  final String listText;
+}
+
 class _AudioChunk {
   const _AudioChunk({
     required this.key,
@@ -529,6 +748,14 @@ class _AudioChunk {
   final String key;
   final String accessibilityId;
   final String value;
+}
+
+Future<_BenchmarkPhonemizerData> _loadBenchmarkPhonemizerData() async {
+  final results = await Future.wait([
+    rootBundle.loadString('assets/cephonemizer/en_rules'),
+    rootBundle.loadString('assets/cephonemizer/en_list'),
+  ]);
+  return _BenchmarkPhonemizerData(rulesText: results[0], listText: results[1]);
 }
 
 double _percentile(List<num> values, double percentile) {
@@ -554,6 +781,36 @@ String _hashBytes(Uint8List bytes) {
     hash = (hash * 0x01000193) & 0xffffffff;
   }
   return hash.toRadixString(16).padLeft(8, '0').substring(0, 8);
+}
+
+List<KittenTTSModelId> _resolveBenchmarkModelIds([String? modelIdsCsv]) {
+  final resolvedModelIdsCsv =
+      modelIdsCsv ??
+      Uri.base.queryParameters['benchmarkModelIds'] ??
+      Uri.base.queryParameters['benchmarkModels'] ??
+      _modelIdsCsv;
+  final requested = resolvedModelIdsCsv
+      .split(',')
+      .map((value) => value.trim())
+      .where((value) => value.isNotEmpty)
+      .toList(growable: false);
+  if (requested.isEmpty) return allKittenTTSModelIds;
+  return requested.map(validateModel).toList(growable: false);
+}
+
+int _resolveWarmRunCount() {
+  final override = int.tryParse(
+    Uri.base.queryParameters['benchmarkWarmRuns'] ?? '',
+  );
+  if (override != null && override > 0) return override;
+  return _defaultWarmRunCount;
+}
+
+Duration? _resolveBenchmarkModelTimeout() {
+  final rawValue = Uri.base.queryParameters['benchmarkModelTimeoutMs'];
+  final timeoutMs = int.tryParse(rawValue ?? '');
+  if (timeoutMs == null || timeoutMs <= 0) return null;
+  return Duration(milliseconds: timeoutMs);
 }
 
 String _slugify(String value) {
