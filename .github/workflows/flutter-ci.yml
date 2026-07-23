@@ -444,10 +444,10 @@ jobs:
             audio_mode: pager
             benchmark_button_id: benchmark-button-low-spec
             warm_runs: "1"
-            expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
-            timeout_minutes: "50"
-            report_timeout_ms: "2400000"
-            mocha_timeout_ms: "2700000"
+            expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8
+            timeout_minutes: "35"
+            report_timeout_ms: "1800000"
+            mocha_timeout_ms: "2100000"
             poll_interval_ms: "30000"
           - slug: pixel-5
             device: Pixel 5

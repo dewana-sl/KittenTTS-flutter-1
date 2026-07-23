@@ -39,6 +39,11 @@ const _audioSemanticsMode = String.fromEnvironment(
 const _voice = 'bella';
 const _speed = 1.0;
 const _audioChunkSize = 64000;
+const _lowSpecBenchmarkModelIds = <KittenTTSModelId>[
+  'nano-int8',
+  'nano',
+  'micro',
+];
 final _benchmarkModelIds = _resolveBenchmarkModelIds();
 final _benchmarkWarmRunCount = _resolveWarmRunCount();
 final _defaultSampleText =
@@ -584,7 +589,10 @@ class _KittenBenchmarkPageState extends State<KittenBenchmarkPage> {
               child: OutlinedButton(
                 onPressed: _running
                     ? null
-                    : () => _runBenchmark(warmRunCount: 1),
+                    : () => _runBenchmark(
+                        modelIds: _lowSpecBenchmarkModelIds,
+                        warmRunCount: 1,
+                      ),
                 child: const Text('Run low-spec benchmark'),
               ),
             ),
