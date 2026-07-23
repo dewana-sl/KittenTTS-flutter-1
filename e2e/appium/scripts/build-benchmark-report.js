@@ -215,10 +215,11 @@ function summarizeWorstDeviceRtf(report) {
 }
 
 function summarizeDeviceStatus(report) {
-  if (report.status === "failed") return "Failed";
-  if (report.status === "partial") return "Partial";
-  if (countFailedRows(report) > 0) return "Model failures";
-  return "Passed";
+  const prefix = report.allowedFailure ? "Advisory " : "";
+  if (report.status === "failed") return `${prefix}Failed`;
+  if (report.status === "partial") return `${prefix}Partial`;
+  if (countFailedRows(report) > 0) return `${prefix}Model failures`;
+  return `${prefix}Passed`;
 }
 
 function summarizeRequestedPlatformVersion(report) {
@@ -293,6 +294,7 @@ function buildDeviceStatusTable(reports) {
         ? `${countFailedRows(report)} model row(s) failed`
         : "";
     const notes = joinNotes([
+      report.allowedFailure ? "advisory low-spec device; does not block CI" : "",
       statusNote,
       summarizeRequestedPlatformVersion(report),
       summarizeRequestedBrowser(report),

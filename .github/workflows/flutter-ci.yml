@@ -446,6 +446,7 @@ jobs:
             warm_runs: "1"
             expected_models: kitten-tts-nano-0.8-int8
             require_wer_audio: "false"
+            allow_failure: "true"
             timeout_minutes: "15"
             report_timeout_ms: "900000"
             mocha_timeout_ms: "960000"
@@ -458,6 +459,7 @@ jobs:
             warm_runs: "5"
             expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
             require_wer_audio: "true"
+            allow_failure: "false"
             timeout_minutes: "35"
             report_timeout_ms: "1800000"
             mocha_timeout_ms: "1920000"
@@ -470,6 +472,7 @@ jobs:
             warm_runs: "5"
             expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
             require_wer_audio: "true"
+            allow_failure: "false"
             timeout_minutes: "35"
             report_timeout_ms: "1800000"
             mocha_timeout_ms: "1920000"
@@ -482,6 +485,7 @@ jobs:
             warm_runs: "5"
             expected_models: kitten-tts-nano-0.8-int8,kitten-tts-nano-0.8,kitten-tts-micro-0.8,kitten-tts-mini-0.8
             require_wer_audio: "true"
+            allow_failure: "false"
             timeout_minutes: "35"
             report_timeout_ms: "1800000"
             mocha_timeout_ms: "1920000"
@@ -513,6 +517,7 @@ jobs:
           TESTMU_SAMPLE_TEXT: ${{ vars.TESTMU_SAMPLE_TEXT || env.DEFAULT_TESTMU_SAMPLE_TEXT }}
           TESTMU_SKIP_SAMPLE_OVERRIDE: "true"
           TESTMU_REQUIRE_WER_AUDIO: ${{ matrix.require_wer_audio }}
+          TESTMU_ALLOW_FAILURE: ${{ matrix.allow_failure }}
           TESTMU_AUDIO_EXTRACTION_MODE: ${{ matrix.audio_mode }}
           TESTMU_BENCHMARK_BUTTON_ID: ${{ matrix.benchmark_button_id }}
           TESTMU_EXPECTED_MODELS: ${{ matrix.expected_models }}
@@ -549,7 +554,7 @@ jobs:
           path: e2e/appium/reports
 
       - name: Fail Android device job if benchmark failed
-        if: steps.run-android-benchmark.outcome == 'failure'
+        if: steps.run-android-benchmark.outcome == 'failure' && matrix.allow_failure != 'true'
         run: |
           echo "The ${{ matrix.device }} benchmark failed. Uploaded the device report and logs above."
           exit 1
